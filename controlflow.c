@@ -179,12 +179,12 @@ static void event_thread_init(void *drcontext)
 static void event_thread_exit(void *drcontext)
 {    
 	per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
+    size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
  
 	dr_printf("EXIT-THREAD:"PFX"\n", tls_field->thread);
 
 	dump_data(tls_field);
 
-	size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
 	dr_thread_free(drcontext, tls_field, tls_field_size);
 }
 
