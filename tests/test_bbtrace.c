@@ -33,7 +33,7 @@ void test_bbtrace_formatinfo_module() {
 	exe.names.module_name = "notepad.exe";
 
 	actual = bbtrace_formatinfo_module(&exe);
-	dr_fprintf("%s\n", actual);
+	dr_fprintf(STDERR, "%s\n", actual);
 }
 
 void test_bbtrace_formatinfo_symbol() {
@@ -51,7 +51,7 @@ void test_bbtrace_formatinfo_symbol() {
 	sym.ordinal = 99;
 
 	actual = bbtrace_formatinfo_symbol(&sym, (app_pc)0x30f0, (app_pc)0x40b0);
-	dr_fprintf("%s\n", actual);
+	dr_fprintf(STDERR, "%s\n", actual);
 }
 
 void test_bbtrace_formatinfo_block() {
@@ -63,7 +63,7 @@ void test_bbtrace_formatinfo_block() {
 	*/
 
 	actual = bbtrace_formatinfo_block((app_pc)0x4000, (app_pc)0x3000, 12);
-	dr_fprintf("%s\n", actual);
+	dr_fprintf(STDERR, "%s\n", actual);
 }
 
 void test_instrlist_app_length(void *drcontext) {
