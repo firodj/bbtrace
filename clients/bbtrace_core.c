@@ -18,11 +18,15 @@ bbtrace_formatinfo_module(module_data_t *mod)
 	const char *mod_name = dr_module_preferred_name(mod);
 
 	dr_snprintf(info, sizeof(info),
-		"{\"module_name\":\"%s\","
+		"{"
+		"\"module_name\":\"%s\","
 		"\"module_start\":\""PFX"\","
 		"\"module_end\":\""PFX"\","
-		"\"module_entry\":\""PFX"\"}",
-		mod_name, mod->start, mod->end, mod->entry_point);
+		"\"module_entry\":\""PFX"\","
+		"\"module_path\":\"%s\""
+		"}",
+		mod_name, mod->start, mod->end, mod->entry_point,
+		mod->full_path);
 
 	return info;
 }
@@ -33,10 +37,12 @@ bbtrace_formatinfo_symbol(dr_symbol_export_t *sym, app_pc mod_start, app_pc func
 	static char info[256];
 
 	dr_snprintf(info, sizeof(info),
-        "{\"symbol_entry\":\""PFX"\","
+        "{"
+        "\"symbol_entry\":\""PFX"\","
         "\"module_start_ref\":\""PFX"\","
         "\"symbol_name\":\"%s\","
-        "\"symbol_ordinal\":%d}",
+        "\"symbol_ordinal\":%d"
+        "}",
         func_entry, mod_start, sym->name, sym->ordinal);
 
 	return info;
@@ -48,9 +54,11 @@ bbtrace_formatinfo_block(app_pc block_entry, app_pc mod_start, uint length)
 	static char info[256];
 
 	dr_snprintf(info, sizeof(info),
-	    "{\"block_entry\":\""PFX"\","
+	    "{"
+	    "\"block_entry\":\""PFX"\","
 	    "\"module_start_ref\":\""PFX"\","
-	    "\"block_end\":\""PFX"\"}",
+	    "\"block_end\":\""PFX"\""
+	    "}",
 	    block_entry, mod_start, block_entry+length);
 
 	return info;
