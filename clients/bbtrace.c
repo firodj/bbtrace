@@ -4,7 +4,7 @@
 #include "drwrap.h"
 #include "hashtable.h"
 #include <intrin.h>
-#include "controlflow.h"
+#include "bbtrace_core.h"
 
 static app_pc exe_start;
 static thread_id_t main_thread = 0;
@@ -13,17 +13,8 @@ static int tls_idx;
 static file_t trace_file;
 static file_t info_file;
 
-#define BUF_TOTAL 1024*1024
-#define MAX_TRACE_LOG 4294967295
-
-typedef struct {    
-    uint pos;
-    uint64 ts;
-    thread_id_t thread;
-} per_thread_t;
-
 static uint64 log_size = 0;
-static int log_count = 0;
+static uint log_count = 0;
 static hashtable_t sym_info_table;
 
 static void dump_check_overflow(size_t request_size)
@@ -31,8 +22,7 @@ static void dump_check_overflow(size_t request_size)
     log_size += request_size;
     if (log_size > MAX_TRACE_LOG)
     {
-        char trace_filename[32];
-        dr_snprintf(trace_filename, 32, "trace.log.%d", ++log_count);
+        const char *trace_filename = bbtrace_log_filename(++log_count);        
 
         dr_close_file(trace_file);
         trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
@@ -111,9 +101,11 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     if (sym) {
         mod = dr_lookup_module(func);
         if (mod) {
-            dr_fprintf(info_file, 
-                "{\"symbol_entry\":\""PFX"\",\"module_start_ref\":\""PFX"\",\"symbol_name\":\"%s\",\"symbol_ordinal\":%d},\n",
-                func, mod->start, sym->name, sym->ordinal);
+            const char *info = bbtrace_formatinfo_symbol(sym, mod->start, func);
+
+            dr_fprintf(info_file, info);
+            dr_fprintf(info_file, ",\n");
+
             dr_free_module_data(mod);
         }
         res = hashtable_remove(&sym_info_table, func);
@@ -123,12 +115,13 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
 static void iterate_exports(const module_data_t *mod, bool add)
 {
 	const char *mod_name = dr_module_preferred_name(mod);
+    const char *info = bbtrace_formatinfo_module(mod);
+
     dr_symbol_export_iterator_t *exp_iter =
         dr_symbol_export_iterator_start(mod->handle);
 
-    dr_fprintf(info_file,
-            "{\"module_name\":\"%s\",\"module_start\":\""PFX"\",\"module_end\":\""PFX"\",\"module_entry\":\""PFX"\"},\n",
-            mod_name, mod->start, mod->end, mod->entry_point);
+    dr_fprintf(info_file, info);
+    dr_fprintf(info_file, ",\n");
 
     while (dr_symbol_export_iterator_hasnext(exp_iter)) {
         dr_symbol_export_t *sym = dr_symbol_export_iterator_next(exp_iter);
@@ -183,7 +176,7 @@ static void event_module_unload(void *drcontext, const module_data_t *mod)
 
 static void event_thread_init(void *drcontext)
 {
-	thread_id_t thread_id = dr_get_thread_id(drcontext);	
+	thread_id_t thread_id = dr_get_thread_id(drcontext);
 
 	size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
 	per_thread_t *tls_field = (per_thread_t *)dr_thread_alloc(drcontext, tls_field_size);
@@ -227,30 +220,20 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 	void *tag, instrlist_t *bb, bool for_trace, bool translating, OUT void **user_data)
 {
 	instr_t *instr = instrlist_first(bb);
-	app_pc src = instr_get_app_pc(instr);
-	
+	app_pc src = instr_get_app_pc(instr);	
 	module_data_t* mod = dr_lookup_module(src);
+
 	*user_data = NULL;
+
 	if (mod) {
 		if (mod->start == exe_start) {
-            uint length = 0;
-            instr_t *walk_instr;
-            // char dis[512] = {0};
+            uint length = instrlist_app_length(drcontext, bb);            
+            const char *info = bbtrace_formatinfo_block(src, mod->start, length);
 
-            for (walk_instr  = instrlist_first_app(bb);
-                walk_instr != NULL;
-                walk_instr = instr_get_next_app(walk_instr)) {
-                length += instr_length(drcontext, walk_instr);
-            }
+            dr_fprintf(info_file, info);
+            dr_fprintf(info_file, ",\n");
 
-            // if (walk_instr = instrlist_last_app(bb))
-            //    instr_disassemble_to_buffer(drcontext, walk_instr, dis, 512);
-
-			*user_data = (void *) instr;
-
-            dr_fprintf(info_file,
-                "{\"block_entry\":\""PFX"\",\"module_start_ref\":\""PFX"\",\"block_end\":\""PFX"\"},\n",
-                src, mod->start, src+length);
+            *user_data = (void *)instr;
 		}
 		dr_free_module_data(mod);
 	}
@@ -398,12 +381,13 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
 {
 	module_data_t *exe;
 	const char *exe_name = NULL;
+    const char *trace_filename = bbtrace_log_filename(++log_count);
 
-	dr_set_client_name("DrControlFlow", "http://firodj.wordpress.com");
+	dr_set_client_name("BBTrace", "http://firodj.wordpress.com");
 
-	trace_file = dr_open_file("trace.log", DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);    
+	trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);    
     if (trace_file == INVALID_FILE) {
-        dr_fprintf(STDERR, "Error opening %s\n", "trace.log");        
+        dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
     }
     info_file = dr_open_file("trace.json", DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
     if (trace_file == INVALID_FILE) {
@@ -433,13 +417,10 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
     exe = dr_get_main_module();
     dr_fprintf(info_file, "[\n");
     if (exe) {
+        const char *info = bbtrace_formatinfo_module(exe);
+        dr_fprintf(info_file, info);
+        dr_fprintf(info_file, ",\n");
         exe_start = exe->start;
-    	exe_name = dr_module_preferred_name(exe);
-
-    	dr_fprintf(info_file,
-            "{\"module_name\":\"%s\",\"module_start\":\""PFX"\",\"module_end\":\""PFX"\",\"module_entry\":\""PFX"\"},\n",
-            exe_name, exe_start, exe->end, exe->entry_point);
-
-    	dr_free_module_data(exe);
+        dr_free_module_data(exe);
     }
 }
