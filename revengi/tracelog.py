@@ -2,6 +2,11 @@
 
 import os, sys
 import struct
+from collections import namedtuple
+
+Function = namedtuple('Function',  ['entry', 'end', 'name'])
+functions = dict()
+labels = dict()
 
 def get_registry_value(key, subkey, value):
 	import _winreg
@@ -39,6 +44,13 @@ class TraceData:
 
 	def get_count(self):
 		return self.data['count']
+
+	def unpack(self, start=0):
+		length = self.get_count() - start
+		if length <= 0: return
+		
+		for entry in struct.unpack_from('<%dI' % (length,), self.data['data'], start*4):
+			yield entry
 
 	def get_trace(self, i):
 		d = struct.unpack('<I', self.data['data'][i*4: i*4+4])

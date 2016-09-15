@@ -440,13 +440,10 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
         "from collections import namedtuple\n"
         "Module = namedtuple('Module', ['name', 'start', 'end', 'entry'])\n"
         "Symbol = namedtuple('Symbol', ['entry', 'module', 'name', 'ordinal'])\n"
-        "Block  = namedtuple('Block',  ['entry', 'module', 'end', 'last'])\n"
-        "Function = namedtuple('Function',  ['entry', 'end', 'name'])\n"
+        "Block  = namedtuple('Block',  ['entry', 'module', 'end', 'last'])\n"        
         "modules = dict()\n"
         "symbols = dict()\n"
-        "blocks  = dict()\n"
-        "functions = dict()\n"
-        "labels  = dict()\n"
+        "blocks  = dict()\n"        
         );
     if (exe) {
         exe_start = exe->start;

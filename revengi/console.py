@@ -26,6 +26,31 @@ class Main:
 	def __init__(self):
 		pass
 
+	def out_main(self):
+		fname = os.path.join(os.getenv('PSX_PATH'), 'psxfin.exe');
+		pe    = pefile.PE(fname)
+
+		va_ep = 0x48b940
+		b    = trace_info.blocks.get(va_ep)
+		mod  = trace_info.modules.get(b.module)
+		ep   = va_ep - mod.start
+		end  = tracelog.functions[va_ep].end
+
+		code_section = find_pe_section(pe, ep)
+		
+		print("[+] Code section found at offset: "
+			"{:#x} [size: {:#x}]".format(code_section.PointerToRawData,
+										code_section.SizeOfRawData))
+
+		#code_at_ep = pe.get_memory_mapped_image()[ep:end]
+		code_at_ep = code_section.get_data(ep, end-ep)
+		md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+		md.detail = True
+		f = open('winmain.asm', 'w')
+		for i in md.disasm(code_at_ep, pe.OPTIONAL_HEADER.ImageBase+ ep):
+			f.write("0x%x:\t%s\t%s\n" %(i.address, i.mnemonic, i.op_str))
+		f.close()
+
 	def all_block(self):
 		tlog = tracelog.TraceLog()
 		
@@ -36,8 +61,7 @@ class Main:
 			d = tlog.get_data(i)
 			if not d: break
 
-			for j in xrange(0, d.get_count()):
-				entry = d.get_trace(j)
+			for entry in d.unpack():				
 				b = trace_info.blocks.get(entry)
 				if not b: continue
 				if b_lo is None or b_lo > entry: b_lo = entry
@@ -123,4 +147,4 @@ class Main:
 
 if __name__ == '__main__':
 	main = Main()
-	main.all_block()
+	main.run()

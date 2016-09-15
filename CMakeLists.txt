@@ -7,7 +7,7 @@ if (NOT DynamoRIO_FOUND)
   message(FATAL_ERROR "DynamoRIO package required to build")
 endif(NOT DynamoRIO_FOUND)
 
-add_library(controlflow SHARED controlflow.c)
+add_library(controlflow SHARED clients/controlflow.c)
 configure_DynamoRIO_client(controlflow)
 use_DynamoRIO_extension(controlflow drmgr)
 use_DynamoRIO_extension(controlflow drwrap)
