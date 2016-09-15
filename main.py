@@ -26,6 +26,26 @@ class Main:
 	def __init__(self):
 		pass
 
+	def all_block(self):
+		tlog = tracelog.TraceLog()
+		
+		i = 0
+		b_lo, b_hi = None, None
+
+		while True:
+			d = tlog.get_data(i)
+			if not d: break
+
+			for j in xrange(0, d.get_count()):
+				entry = d.get_trace(j)
+				b = trace_info.blocks.get(entry)
+				if not b: continue
+				if b_lo is None or b_lo > entry: b_lo = entry
+				if b_hi is None or b_hi < b.end: b_hi = b.end
+
+			print i, hex(b_lo), hex(b_hi), b_hi-b_lo
+			i += 1
+
 	def load_pe(self):
 		fname = os.path.join(os.getenv('PSX_PATH'), 'psxfin.exe');
 		pe    = pefile.PE(fname)
@@ -60,8 +80,8 @@ class Main:
 			print("0x%x:\t%s\t%s" %(i.address, i.mnemonic, i.op_str))
 
 		addr = 0x522144 - pe.OPTIONAL_HEADER.ImageBase
-		v = pe.get_memory_mapped_image()[addr:addr+4]
-		print "0x522144 =", [hex(i) for i in struct.unpack('<I', v)];
+		v = pe.get_memory_mapped_image()[addr:addr+16]
+		print "0x522144 =", [hex(i) for i in struct.unpack('<IIII', v)];
 		
 		#addr = 0x14246a - pe.OPTIONAL_HEADER.ImageBase
 		#data_section = find_pe_section(pe, addr)
@@ -103,4 +123,4 @@ class Main:
 
 if __name__ == '__main__':
 	main = Main()
-	main.run()
+	main.all_block()
