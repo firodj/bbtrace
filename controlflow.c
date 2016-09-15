@@ -3,6 +3,8 @@
 #include "drmgr.h"
 #include "drwrap.h"
 #include "drx.h"
+#include <intrin.h>
+#include "controlflow.h"
 
 static app_pc exe_start;
 static thread_id_t main_thread = 0;
@@ -12,14 +14,60 @@ static file_t trace_file;
 static file_t info_file;
 
 #define BUF_TOTAL 1024*1024
+#define MAX_TRACE_LOG 4294967295
 
 typedef struct {	
 	uint pos;
+    uint64 ts;
+    thread_id_t thread;
 } per_thread_t;
 
-static void dump_data(app_pc* pc_data, uint count)
+static uint64 log_size = 0;
+static int log_count = 0;
+
+static void dump_check_overflow(size_t request_size)
 {
-	dr_write_file(trace_file, pc_data, sizeof(app_pc) * count);
+    log_size += request_size;
+    if (log_size > MAX_TRACE_LOG)
+    {
+        char trace_filename[32];
+        dr_snprintf(trace_filename, 32, "trace.log.%d", ++log_count);
+
+        dr_close_file(trace_file);
+        trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+        log_size -= MAX_TRACE_LOG;
+    }
+}
+
+static void dump_pkt(void *data, size_t size)
+{
+    dump_check_overflow(size);
+    dr_write_file(trace_file, data, size);
+}
+
+static void dump_data(per_thread_t *tls_field)
+{
+    size_t sz;
+    pkt_trace_t pkt_trace;
+    app_pc* pc_data = (app_pc*)((byte*)tls_field + sizeof(per_thread_t));
+    uint count = tls_field->pos;
+
+    if (!count) return;
+
+    sz = sizeof(app_pc) * count;
+    
+    pkt_trace.code = 0x0;
+    pkt_trace.ts = tls_field->ts;
+    pkt_trace.thread = tls_field->thread;    
+    pkt_trace.size = count;
+
+    dump_check_overflow( sz + sizeof(pkt_trace) );
+
+    dr_write_file(trace_file, &pkt_trace, sizeof(pkt_trace));
+    dr_write_file(trace_file, pc_data, sz);
+
+    tls_field->pos = 0;
+    tls_field->ts = __rdtsc();
 }
 
 static void lib_entry(void *wrapcxt, INOUT void **user_data)
@@ -30,7 +78,7 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     module_data_t *mod;
     app_pc ret_addr = NULL;
     void *drcontext = drwrap_get_drcontext(wrapcxt);
-    thread_id_t thread_id = dr_get_thread_id(drcontext);
+    // thread_id_t thread_id = dr_get_thread_id(drcontext);
     per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
     bool from_exe = false;
     byte *data = (byte*)tls_field + sizeof(per_thread_t);
@@ -55,22 +103,8 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     pc_data[tls_field->pos] = func;
     tls_field->pos++;
     if (tls_field->pos >= BUF_TOTAL) {    	
-    	dump_data(pc_data, tls_field->pos);
-    	tls_field->pos = 0;
+    	dump_data(tls_field);    	
     }
-
-    /*
-    mod = dr_lookup_module(func);
-    if (mod) {
-    	mod_name = dr_module_preferred_name(mod);    	
-    }
-
-    dr_printf("CALL:%s!%s@"PFX" RET:"PFX" TID:"PFX"\n", mod_name, sym_name, func, ret_addr);
-
-    if (mod) {
-    	dr_free_module_data(mod);
-    }
-    */
 }
 
 static void iterate_exports(const module_data_t *mod, bool add)
@@ -79,7 +113,8 @@ static void iterate_exports(const module_data_t *mod, bool add)
     dr_symbol_export_iterator_t *exp_iter =
         dr_symbol_export_iterator_start(mod->handle);
 
-    dr_fprintf(info_file, "dll:\n\tname:%s\n\tstart:"PFX"\n\tend:"PFX"\n\tentry:"PFX"\n\texports:\n", mod_name, mod->start, mod->end, mod->entry_point);
+    dr_fprintf(info_file, "modules["PFX"] = Module('%s', "PFX", "PFX", "PFX")\n",
+            mod->start, mod_name, mod->start, mod->end, mod->entry_point);
 
     while (dr_symbol_export_iterator_hasnext(exp_iter)) {
         dr_symbol_export_t *sym = dr_symbol_export_iterator_next(exp_iter);
@@ -90,7 +125,9 @@ static void iterate_exports(const module_data_t *mod, bool add)
             if (add) {                
                 drwrap_wrap_ex(func, lib_entry, NULL, (void *) sym->name, 0);
 
-                dr_fprintf(info_file, "\t\t"PFX":\n\t\t\tname:%s\n\t\t\tordinal:"PFX"\n", func, sym->name, sym->ordinal);
+                dr_fprintf(info_file, 
+                    "symbols["PFX"] = Symbol("PFX", "PFX", '%s', %d)\n",
+                    func, func, mod->start, sym->name, sym->ordinal);
             } else {                
                 drwrap_unwrap(func, lib_entry, NULL);
             }
@@ -115,9 +152,15 @@ static void event_module_unload(void *drcontext, const module_data_t *mod)
 static void event_thread_init(void *drcontext)
 {
 	thread_id_t thread_id = dr_get_thread_id(drcontext);
-		
-	size_t tls_field_size = sizeof(per_thread_t) + (sizeof(uint) * BUF_TOTAL);
+	pkt_thread_t pkt_thread;
+
+	size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
 	per_thread_t *tls_field = (per_thread_t *)dr_thread_alloc(drcontext, tls_field_size);
+
+    pkt_thread.code = 0x1;
+    pkt_thread.ts = __rdtsc();
+    pkt_thread.thread = thread_id;        
+    dump_pkt(&pkt_thread, sizeof(pkt_thread));
 
     if (main_thread == 0) {
         main_thread = thread_id;
@@ -127,42 +170,70 @@ static void event_thread_init(void *drcontext)
    		dr_printf("THREAD:"PFX"\n", thread_id);
     }
 
-     /* create an instance of our data structure for this thread */
-	
-	/* store it in the slot provided in the drcontext */
 	drmgr_set_tls_field(drcontext, tls_idx, tls_field);
 	memset(tls_field, 0, tls_field_size);
+    tls_field->pos = 0;
+    tls_field->ts = pkt_thread.ts;
+    tls_field->thread = pkt_thread.thread;
 }
 
 static void event_thread_exit(void *drcontext)
 {
-	thread_id_t thread_id = dr_get_thread_id(drcontext);
+    pkt_thread_t pkt_thread;
 	per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
-	byte *data = (byte*)tls_field + sizeof(per_thread_t);
-    app_pc *pc_data = (app_pc*)data;
+	
+    pkt_thread.code = 0x2;
+    pkt_thread.ts = __rdtsc();
+    pkt_thread.thread = tls_field->thread;
+    dump_pkt(&pkt_thread, sizeof(pkt_thread));
 
-	dr_printf("EXIT-THREAD:"PFX"\n", thread_id);
+	dr_printf("EXIT-THREAD:"PFX"\n", tls_field->thread);
 
-	dump_data(pc_data, tls_field->pos);
+	dump_data(tls_field);
 
-	size_t tls_field_size = sizeof(per_thread_t) + (sizeof(uint) * BUF_TOTAL);
+	size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
 	dr_thread_free(drcontext, tls_field, tls_field_size);
+}
+
+
+static void clean_call(uint count)
+{
+    void *drcontext = dr_get_current_drcontext();    
+
+    per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
+    
+    dump_data(tls_field);
 }
 
 static dr_emit_flags_t event_bb_analysis(void *drcontext,
 	void *tag, instrlist_t *bb, bool for_trace, bool translating, OUT void **user_data)
 {
-	instr_t *instr;
-	app_pc src;
-
-	instr = instrlist_first(bb);
-	src = instr_get_app_pc(instr);
-
+	instr_t *instr = instrlist_first(bb);
+	app_pc src = instr_get_app_pc(instr);
+	
 	module_data_t* mod = dr_lookup_module(src);
 	*user_data = NULL;
 	if (mod) {
 		if (mod->start == exe_start) {
+            int cur_size = 0;
+            instr_t *walk_instr;
+            char dis[512] = {0};
+
+            for (walk_instr  = instrlist_first_app(bb);
+                walk_instr != NULL;
+                walk_instr = instr_get_next_app(walk_instr)) {
+            cur_size++;
+            }
+
+            if (walk_instr = instrlist_last_app(bb)) {
+                instr_disassemble_to_buffer(drcontext, walk_instr, dis, 512);
+            }
+
 			*user_data = (void *) instr;
+
+            dr_fprintf(info_file,
+                "blocks["PFX"] = Block("PFX", "PFX", %d, '%s')\n",
+                src, src, mod->start, cur_size, dis);
 		}
 		dr_free_module_data(mod);
 	}
@@ -170,30 +241,21 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 	return DR_EMIT_DEFAULT;
 }
 
-
-static void clean_call(uint count)
-{
-	void *drcontext = dr_get_current_drcontext();
-	per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
-    byte *data = (byte*)tls_field + sizeof(per_thread_t);
-    
-    dump_data((app_pc*)data, count);
-}
-
 static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag, 
 	instrlist_t *bb, instr_t *instr, bool for_trace, bool translating, void *user_data)
 {
 	if (instr == (instr_t*)user_data/*first instr*/) {
 		app_pc start = instr_get_app_pc(instr);
-		per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
-		instr_t *goto_skip = INSTR_CREATE_label(drcontext);
+        instr_t *goto_skip = INSTR_CREATE_label(drcontext);
+
+		// per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
+        // dr_using_all_private_caches()?	        
 
 		dr_save_arith_flags(drcontext, bb, instr, SPILL_SLOT_1);
 		dr_save_reg(drcontext, bb, instr, DR_REG_XCX, SPILL_SLOT_2);
 		dr_save_reg(drcontext, bb, instr, DR_REG_XBX, SPILL_SLOT_3);
 		
-		drmgr_insert_read_tls_field(drcontext, tls_idx, bb, instr, DR_REG_XBX);
-		// dr_using_all_private_caches() ?
+		drmgr_insert_read_tls_field(drcontext, tls_idx, bb, instr, DR_REG_XBX);		
 
 		instrlist_meta_preinsert(bb, instr,
 			INSTR_CREATE_mov_ld(drcontext,
@@ -218,6 +280,12 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 				OPND_CREATE_INT32(BUF_TOTAL))
 			);
 
+        instrlist_meta_preinsert(bb, instr,
+            INSTR_CREATE_mov_st(drcontext,
+                opnd_create_base_disp(DR_REG_XBX, DR_REG_NULL, 0, offsetof(per_thread_t, pos), OPSZ_4),
+                opnd_create_reg(DR_REG_XCX))
+            );
+
 		instrlist_meta_preinsert(bb, instr,
 			INSTR_CREATE_jcc(drcontext, OP_jb, opnd_create_instr(goto_skip))
 			);
@@ -228,19 +296,7 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
             1,
             opnd_create_reg(DR_REG_XCX));
 
-		instrlist_meta_preinsert(bb, instr,
-			INSTR_CREATE_xor(drcontext,
-				opnd_create_reg(DR_REG_XCX),
-				opnd_create_reg(DR_REG_XCX))
-			);
-
-		instrlist_meta_preinsert(bb, instr, goto_skip);
-
-		instrlist_meta_preinsert(bb, instr,
-			INSTR_CREATE_mov_st(drcontext,
-				opnd_create_base_disp(DR_REG_XBX, DR_REG_NULL, 0, offsetof(per_thread_t, pos), OPSZ_4),
-				opnd_create_reg(DR_REG_XCX))
-			);
+		instrlist_meta_preinsert(bb, instr, goto_skip);		
 
 		dr_restore_reg(drcontext, bb, instr, DR_REG_XCX, SPILL_SLOT_2);
 		dr_restore_reg(drcontext, bb, instr, DR_REG_XBX, SPILL_SLOT_3);
@@ -275,7 +331,7 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
     if (trace_file == INVALID_FILE) {
         dr_fprintf(STDERR, "Error opening %s\n", "trace.log");        
     }
-    info_file = dr_open_file("trace.info", DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+    info_file = dr_open_file("trace_info.py", DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
     if (trace_file == INVALID_FILE) {
         dr_fprintf(STDERR, "Error opening %s\n", "trace.info");        
     }
@@ -299,11 +355,24 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
     tls_idx = drmgr_register_tls_field();
 
     exe = dr_get_main_module();
+    dr_fprintf(info_file, 
+        "from collections import namedtuple\n"
+        "Module = namedtuple('Module', ['name', 'start', 'end', 'entry'])\n"
+        "Symbol = namedtuple('Symbol', ['entry', 'module', 'name', 'ordinal'])\n"
+        "Block  = namedtuple('Block',  ['entry', 'module', 'count', 'last'])\n"
+        "modules = dict()\n"
+        "symbols = dict()\n"
+        "blocks  = dict()\n"
+        );
     if (exe) {
         exe_start = exe->start;
     	exe_name = dr_module_preferred_name(exe);
     	
-    	dr_fprintf(info_file, "exe:\n\tname:%s\n\tstart:"PFX"\n\tend:"PFX"\n\tentry:"PFX"\n", exe_name, exe_start, exe->end, exe->entry_point);
+        dr_fprintf(info_file,
+            "exe_start = "PFX"\n", exe_start);
+    	dr_fprintf(info_file,
+            "modules["PFX"] = Module('%s', "PFX", "PFX", "PFX")\n",
+            exe_start, exe_name, exe_start, exe->end, exe->entry_point);
 
     	dr_free_module_data(exe);
     }
