@@ -28,13 +28,18 @@ class Main:
 		code_section = find_pe_section(pe, eop)
 		
 		print("[+] Code section found at offset: "
-			  "{:#x} [size: {:#x}]".format(code_section.PointerToRawData,
-										  code_section.SizeOfRawData))
+			"{:#x} [size: {:#x}]".format(code_section.PointerToRawData,
+										code_section.SizeOfRawData))
 
 		# get first 10 bytes at entry point and dump them
 		code_at_oep = code_section.get_data(eop, 10)
 		print("[*] Code at EOP:\n{}".
-			  format(" ".join("{:02x}".format(ord(c)) for c in code_at_oep)))
+			format(" ".join("{:02x}".format(ord(c)) for c in code_at_oep)))
+
+		for entry in pe.DIRECTORY_ENTRY_IMPORT:
+			print entry.dll
+			for imp in entry.imports:
+				print '\t', hex(imp.address), imp.name
 
 		self.pe = pe
 
@@ -60,4 +65,4 @@ class Main:
 
 if __name__ == '__main__':
 	main = Main()
-	main.run()
+	main.load_pe()
