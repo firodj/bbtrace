@@ -3,8 +3,6 @@
 #include "drmgr.h"
 #include "drwrap.h"
 #include "drx.h"
-#include <intrin.h>
-#include "controlflow.h"
 
 static app_pc exe_start;
 static thread_id_t main_thread = 0;
@@ -16,11 +14,20 @@ static file_t info_file;
 #define BUF_TOTAL 1024*1024
 #define MAX_TRACE_LOG 4294967295
 
+#pragma pack(1)
 typedef struct {	
 	uint pos;
     uint64 ts;
     thread_id_t thread;
 } per_thread_t;
+
+typedef struct {
+    uint code;
+    uint64 ts;
+    uint thread;
+    uint size;
+} pkt_trace_t;
+#pragma pack()
 
 static uint64 log_size = 0;
 static int log_count = 0;
@@ -67,7 +74,7 @@ static void dump_data(per_thread_t *tls_field)
     dr_write_file(trace_file, pc_data, sz);
 
     tls_field->pos = 0;
-    tls_field->ts = __rdtsc();
+    tls_field->ts = 0;
 }
 
 static void lib_entry(void *wrapcxt, INOUT void **user_data)
@@ -151,16 +158,10 @@ static void event_module_unload(void *drcontext, const module_data_t *mod)
 
 static void event_thread_init(void *drcontext)
 {
-	thread_id_t thread_id = dr_get_thread_id(drcontext);
-	pkt_thread_t pkt_thread;
+	thread_id_t thread_id = dr_get_thread_id(drcontext);	
 
 	size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
 	per_thread_t *tls_field = (per_thread_t *)dr_thread_alloc(drcontext, tls_field_size);
-
-    pkt_thread.code = 0x1;
-    pkt_thread.ts = __rdtsc();
-    pkt_thread.thread = thread_id;        
-    dump_pkt(&pkt_thread, sizeof(pkt_thread));
 
     if (main_thread == 0) {
         main_thread = thread_id;
@@ -171,22 +172,14 @@ static void event_thread_init(void *drcontext)
     }
 
 	drmgr_set_tls_field(drcontext, tls_idx, tls_field);
-	memset(tls_field, 0, tls_field_size);
-    tls_field->pos = 0;
-    tls_field->ts = pkt_thread.ts;
-    tls_field->thread = pkt_thread.thread;
+	memset(tls_field, 0, tls_field_size);    
+    tls_field->thread = thread_id;
 }
 
 static void event_thread_exit(void *drcontext)
-{
-    pkt_thread_t pkt_thread;
+{    
 	per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
-	
-    pkt_thread.code = 0x2;
-    pkt_thread.ts = __rdtsc();
-    pkt_thread.thread = tls_field->thread;
-    dump_pkt(&pkt_thread, sizeof(pkt_thread));
-
+ 
 	dr_printf("EXIT-THREAD:"PFX"\n", tls_field->thread);
 
 	dump_data(tls_field);
@@ -247,6 +240,7 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 	if (instr == (instr_t*)user_data/*first instr*/) {
 		app_pc start = instr_get_app_pc(instr);
         instr_t *goto_skip = INSTR_CREATE_label(drcontext);
+        instr_t *goto_skip_rdtsc = INSTR_CREATE_label(drcontext);
 
 		// per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
         // dr_using_all_private_caches()?	        
@@ -257,35 +251,80 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 		
 		drmgr_insert_read_tls_field(drcontext, tls_idx, bb, instr, DR_REG_XBX);		
 
+        // xcx = tls_field->pos
 		instrlist_meta_preinsert(bb, instr,
 			INSTR_CREATE_mov_ld(drcontext,
 				opnd_create_reg(DR_REG_XCX),
 				OPND_CREATE_MEM32(DR_REG_XBX, offsetof(per_thread_t, pos)))
 			);
 
+        // xcx ? 0
+        instrlist_meta_preinsert(bb, instr,
+            INSTR_CREATE_test(drcontext,
+                opnd_create_reg(DR_REG_XCX),
+                opnd_create_reg(DR_REG_XCX))
+            );
+
+        // tls_field->pc_data[xcx] = start
 		instrlist_meta_preinsert(bb, instr,
 			INSTR_CREATE_mov_st(drcontext,
 				opnd_create_base_disp(DR_REG_XBX, DR_REG_XCX, sizeof(uint), sizeof(per_thread_t), OPSZ_4),
 				OPND_CREATE_INT32(start))
 			);
 
+        // if (xcx != 0) goto skip_rdtsc
+        instrlist_meta_preinsert(bb, instr,
+            INSTR_CREATE_jcc(drcontext, OP_jnz, opnd_create_instr(goto_skip_rdtsc))
+            );
+
+        dr_save_reg(drcontext, bb, instr, DR_REG_XAX, SPILL_SLOT_4);
+        dr_save_reg(drcontext, bb, instr, DR_REG_XDX, SPILL_SLOT_5);
+
+        // xdx:xax = rdtsc
+        instrlist_meta_preinsert(bb, instr,
+            INSTR_CREATE_rdtsc(drcontext)
+            );
+
+        // tls_field[ts] = xdx:xax
+        instrlist_meta_preinsert(bb, instr,
+            INSTR_CREATE_mov_st(drcontext,
+                OPND_CREATE_MEM32(DR_REG_XBX, offsetof(per_thread_t, ts)),
+                opnd_create_reg(DR_REG_XAX))
+            );
+
+        instrlist_meta_preinsert(bb, instr,
+            INSTR_CREATE_mov_st(drcontext,
+                OPND_CREATE_MEM32(DR_REG_XBX, offsetof(per_thread_t, ts)+4),
+                opnd_create_reg(DR_REG_XDX))
+            );
+
+        dr_restore_reg(drcontext, bb, instr, DR_REG_XAX, SPILL_SLOT_4);
+        dr_restore_reg(drcontext, bb, instr, DR_REG_XDX, SPILL_SLOT_5);
+        
+        // label skip_rdtsc:
+        instrlist_meta_preinsert(bb, instr, goto_skip_rdtsc);
+
+        // xcx++
 		instrlist_meta_preinsert(bb, instr,
 			INSTR_CREATE_inc(drcontext,	
 				opnd_create_reg(DR_REG_XCX))
 			);
 
+        // xcx ? BUF_TOTAL
 		instrlist_meta_preinsert(bb, instr,
 			INSTR_CREATE_cmp(drcontext, 
 				opnd_create_reg(DR_REG_XCX),
 				OPND_CREATE_INT32(BUF_TOTAL))
 			);
 
+        // tls_field->pos = xcx
         instrlist_meta_preinsert(bb, instr,
             INSTR_CREATE_mov_st(drcontext,
-                opnd_create_base_disp(DR_REG_XBX, DR_REG_NULL, 0, offsetof(per_thread_t, pos), OPSZ_4),
+                OPND_CREATE_MEM32(DR_REG_XBX, offsetof(per_thread_t, pos)),
                 opnd_create_reg(DR_REG_XCX))
             );
 
+        // if (xcx < BUF_TOTAL) goto skip
 		instrlist_meta_preinsert(bb, instr,
 			INSTR_CREATE_jcc(drcontext, OP_jb, opnd_create_instr(goto_skip))
 			);
@@ -296,7 +335,8 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
             1,
             opnd_create_reg(DR_REG_XCX));
 
-		instrlist_meta_preinsert(bb, instr, goto_skip);		
+        // label skip:
+		instrlist_meta_preinsert(bb, instr, goto_skip);
 
 		dr_restore_reg(drcontext, bb, instr, DR_REG_XCX, SPILL_SLOT_2);
 		dr_restore_reg(drcontext, bb, instr, DR_REG_XBX, SPILL_SLOT_3);
