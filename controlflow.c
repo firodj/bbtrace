@@ -107,8 +107,7 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
 
     if (!from_exe) return;
 
-    pc_data[tls_field->pos] = func;
-    tls_field->pos++;
+    pc_data[tls_field->pos++] = func;
     if (tls_field->pos >= BUF_TOTAL) {    	
     	dump_data(tls_field);    	
     }
@@ -143,11 +142,25 @@ static void iterate_exports(const module_data_t *mod, bool add)
     dr_symbol_export_iterator_stop(exp_iter);
 }
 
+static void iterate_imports(const module_data_t *mod)
+{
+    const char *mod_name = dr_module_preferred_name(mod);
+    dr_symbol_import_iterator_t *imp_iter =
+        dr_symbol_import_iterator_start(mod->handle, NULL);
+    while (dr_symbol_import_iterator_hasnext(imp_iter)) {
+        dr_symbol_import_t *sym = dr_symbol_import_iterator_next(imp_iter);
+        dr_printf("IMPORT %s!%s@%d\n", sym->modname, sym->name, sym->ordinal);
+    }
+    dr_symbol_import_iterator_stop(imp_iter);
+}
+
 static void event_module_load(void *drcontext, const module_data_t *mod,
 	bool loaded)
 {
     if (mod->start != exe_start)
         iterate_exports(mod, true/*add*/);
+    else
+        iterate_imports(mod);
 }
 
 static void event_module_unload(void *drcontext, const module_data_t *mod)
