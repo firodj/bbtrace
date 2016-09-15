@@ -12,7 +12,7 @@ static FuncDump(start)
         if( str != 0 )
         {
             end = GetFunctionAttr(ea, FUNCATTR_END);
-            Message("{\"entry\":\"0x%x\",\"end\":\"0x%x\",\"name\":\"%s\"},\n", ea, end, str);
+            Message("{\"function_entry\":\"0x%x\",\"function_end\":\"0x%x\",\"function_name\":\"%s\"},\n", ea, end, str);
         }
 
         ea = NextFunction(ea);
@@ -21,5 +21,7 @@ static FuncDump(start)
 
 static main() 
 {
+    Message("[\n");
     FuncDump(0x0);
+    Message("{}\n]");
 }

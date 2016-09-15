@@ -3,6 +3,8 @@
 #include "drmgr.h"
 #include "drwrap.h"
 #include "hashtable.h"
+#include <intrin.h>
+#include "controlflow.h"
 
 static app_pc exe_start;
 static thread_id_t main_thread = 0;
@@ -14,20 +16,11 @@ static file_t info_file;
 #define BUF_TOTAL 1024*1024
 #define MAX_TRACE_LOG 4294967295
 
-#pragma pack(1)
-typedef struct {	
-	uint pos;
+typedef struct {    
+    uint pos;
     uint64 ts;
     thread_id_t thread;
 } per_thread_t;
-
-typedef struct {
-    uint code;
-    uint64 ts;
-    uint thread;
-    uint size;
-} pkt_trace_t;
-#pragma pack()
 
 static uint64 log_size = 0;
 static int log_count = 0;
@@ -64,9 +57,9 @@ static void dump_data(per_thread_t *tls_field)
 
     sz = sizeof(app_pc) * count;
     
-    pkt_trace.code = 0x0;
-    pkt_trace.ts = tls_field->ts;
-    pkt_trace.thread = tls_field->thread;    
+    pkt_trace.header.code = PKT_CODE_TRACE;
+    pkt_trace.header.ts = tls_field->ts;
+    pkt_trace.header.thread = tls_field->thread;    
     pkt_trace.size = count;
 
     dump_check_overflow( sz + sizeof(pkt_trace) );
@@ -119,8 +112,8 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
         mod = dr_lookup_module(func);
         if (mod) {
             dr_fprintf(info_file, 
-               "symbols["PFX"] = Symbol("PFX", "PFX", '%s', %d)\n",
-                func, func, mod->start, sym->name, sym->ordinal);
+                "{\"symbol_entry\":\""PFX"\",\"module_start_ref\":\""PFX"\",\"symbol_name\":\"%s\",\"symbol_ordinal\":%d},\n",
+                func, mod->start, sym->name, sym->ordinal);
             dr_free_module_data(mod);
         }
         res = hashtable_remove(&sym_info_table, func);
@@ -133,8 +126,9 @@ static void iterate_exports(const module_data_t *mod, bool add)
     dr_symbol_export_iterator_t *exp_iter =
         dr_symbol_export_iterator_start(mod->handle);
 
-    dr_fprintf(info_file, "modules["PFX"] = Module('%s', "PFX", "PFX", "PFX")\n",
-            mod->start, mod_name, mod->start, mod->end, mod->entry_point);
+    dr_fprintf(info_file,
+            "{\"module_name\":\"%s\",\"module_start\":\""PFX"\",\"module_end\":\""PFX"\",\"module_entry\":\""PFX"\"},\n",
+            mod_name, mod->start, mod->end, mod->entry_point);
 
     while (dr_symbol_export_iterator_hasnext(exp_iter)) {
         dr_symbol_export_t *sym = dr_symbol_export_iterator_next(exp_iter);
@@ -241,7 +235,7 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 		if (mod->start == exe_start) {
             uint length = 0;
             instr_t *walk_instr;
-            char dis[512] = {0};
+            // char dis[512] = {0};
 
             for (walk_instr  = instrlist_first_app(bb);
                 walk_instr != NULL;
@@ -249,15 +243,14 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
                 length += instr_length(drcontext, walk_instr);
             }
 
-            if (walk_instr = instrlist_last_app(bb)) {
-                instr_disassemble_to_buffer(drcontext, walk_instr, dis, 512);
-            }
+            // if (walk_instr = instrlist_last_app(bb))
+            //    instr_disassemble_to_buffer(drcontext, walk_instr, dis, 512);
 
 			*user_data = (void *) instr;
 
             dr_fprintf(info_file,
-                "blocks["PFX"] = Block("PFX", "PFX", "PFX", '%s')\n",
-                src, src, mod->start, src+length, dis);
+                "{\"block_entry\":\""PFX"\",\"module_start_ref\":\""PFX"\",\"block_end\":\""PFX"\"},\n",
+                src, mod->start, src+length);
 		}
 		dr_free_module_data(mod);
 	}
@@ -388,6 +381,8 @@ static void event_exit(void)
     dr_mutex_destroy(mutex);
 
     dr_close_file(trace_file);
+
+    dr_fprintf(info_file, "{}\n]");
     dr_close_file(info_file);
 
     hashtable_delete(&sym_info_table);
@@ -410,7 +405,7 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
     if (trace_file == INVALID_FILE) {
         dr_fprintf(STDERR, "Error opening %s\n", "trace.log");        
     }
-    info_file = dr_open_file("trace_info.py", DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+    info_file = dr_open_file("trace.json", DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
     if (trace_file == INVALID_FILE) {
         dr_fprintf(STDERR, "Error opening %s\n", "trace.info");        
     }
@@ -436,24 +431,14 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
     hashtable_init_ex(&sym_info_table, 6, HASH_INTPTR, false, false, sym_info_entry_free, NULL, NULL);
 
     exe = dr_get_main_module();
-    dr_fprintf(info_file, 
-        "from collections import namedtuple\n"
-        "Module = namedtuple('Module', ['name', 'start', 'end', 'entry'])\n"
-        "Symbol = namedtuple('Symbol', ['entry', 'module', 'name', 'ordinal'])\n"
-        "Block  = namedtuple('Block',  ['entry', 'module', 'end', 'last'])\n"        
-        "modules = dict()\n"
-        "symbols = dict()\n"
-        "blocks  = dict()\n"        
-        );
+    dr_fprintf(info_file, "[\n");
     if (exe) {
         exe_start = exe->start;
     	exe_name = dr_module_preferred_name(exe);
-    	
-        dr_fprintf(info_file,
-            "exe_start = "PFX"\n", exe_start);
+
     	dr_fprintf(info_file,
-            "modules["PFX"] = Module('%s', "PFX", "PFX", "PFX")\n",
-            exe_start, exe_name, exe_start, exe->end, exe->entry_point);
+            "{\"module_name\":\"%s\",\"module_start\":\""PFX"\",\"module_end\":\""PFX"\",\"module_entry\":\""PFX"\"},\n",
+            exe_name, exe_start, exe->end, exe->entry_point);
 
     	dr_free_module_data(exe);
     }
