@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include "drmgr.h"
 #include "drwrap.h"
-#include "drx.h"
+#include "hashtable.h"
 
 static app_pc exe_start;
 static thread_id_t main_thread = 0;
@@ -31,6 +31,7 @@ typedef struct {
 
 static uint64 log_size = 0;
 static int log_count = 0;
+static hashtable_t sym_info_table;
 
 static void dump_check_overflow(size_t request_size)
 {
@@ -79,17 +80,18 @@ static void dump_data(per_thread_t *tls_field)
 
 static void lib_entry(void *wrapcxt, INOUT void **user_data)
 {
-    const char *sym_name = (const char *) *user_data;
+    dr_symbol_export_t *sym = NULL;
     const char *mod_name = NULL;
     app_pc func = drwrap_get_func(wrapcxt);
     module_data_t *mod;
     app_pc ret_addr = NULL;
     void *drcontext = drwrap_get_drcontext(wrapcxt);
-    // thread_id_t thread_id = dr_get_thread_id(drcontext);
+
     per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
     bool from_exe = false;
     byte *data = (byte*)tls_field + sizeof(per_thread_t);
     app_pc *pc_data = (app_pc*)data;
+    bool res = false;
 
     DR_TRY_EXCEPT(drcontext, {
         ret_addr = drwrap_get_retaddr(wrapcxt);
@@ -108,8 +110,20 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     if (!from_exe) return;
 
     pc_data[tls_field->pos++] = func;
-    if (tls_field->pos >= BUF_TOTAL) {    	
-    	dump_data(tls_field);    	
+    if (tls_field->pos >= BUF_TOTAL) {      
+        dump_data(tls_field);
+    }
+
+    sym = hashtable_lookup(&sym_info_table, func);
+    if (sym) {
+        mod = dr_lookup_module(func);
+        if (mod) {
+            dr_fprintf(info_file, 
+               "symbols["PFX"] = Symbol("PFX", "PFX", '%s', %d)\n",
+                func, func, mod->start, sym->name, sym->ordinal);
+            dr_free_module_data(mod);
+        }
+        res = hashtable_remove(&sym_info_table, func);
     }
 }
 
@@ -127,15 +141,19 @@ static void iterate_exports(const module_data_t *mod, bool add)
         app_pc func = NULL;
         if (sym->is_code)
             func = sym->addr;
-        if (func != NULL) {
-            if (add) {                
-                drwrap_wrap_ex(func, lib_entry, NULL, (void *) sym->name, 0);
+        if (func) {
+            if (add) {
+                dr_symbol_export_t *sym_entry = dr_global_alloc(sizeof(dr_symbol_export_t));
+                sym_entry->name = sym->name;
+                sym_entry->addr = sym->addr;
+                sym_entry->ordinal = sym->ordinal;
+                hashtable_add(&sym_info_table, func, sym_entry);
 
-                dr_fprintf(info_file, 
-                    "symbols["PFX"] = Symbol("PFX", "PFX", '%s', %d)\n",
-                    func, func, mod->start, sym->name, sym->ordinal);
-            } else {                
+                drwrap_wrap(func, lib_entry, NULL);
+            } else {
                 drwrap_unwrap(func, lib_entry, NULL);
+
+                hashtable_remove(&sym_info_table, func);
             }
         }
     }
@@ -221,14 +239,14 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 	*user_data = NULL;
 	if (mod) {
 		if (mod->start == exe_start) {
-            int cur_size = 0;
+            uint length = 0;
             instr_t *walk_instr;
             char dis[512] = {0};
 
             for (walk_instr  = instrlist_first_app(bb);
                 walk_instr != NULL;
                 walk_instr = instr_get_next_app(walk_instr)) {
-            cur_size++;
+                length += instr_length(drcontext, walk_instr);
             }
 
             if (walk_instr = instrlist_last_app(bb)) {
@@ -238,8 +256,8 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 			*user_data = (void *) instr;
 
             dr_fprintf(info_file,
-                "blocks["PFX"] = Block("PFX", "PFX", %d, '%s')\n",
-                src, src, mod->start, cur_size, dis);
+                "blocks["PFX"] = Block("PFX", "PFX", "PFX", '%s')\n",
+                src, src, mod->start, src+length, dis);
 		}
 		dr_free_module_data(mod);
 	}
@@ -371,11 +389,19 @@ static void event_exit(void)
 
     dr_close_file(trace_file);
     dr_close_file(info_file);
+
+    hashtable_delete(&sym_info_table);
+}
+
+static void
+sym_info_entry_free(void *entry)
+{   
+    dr_global_free(entry, sizeof(dr_symbol_export_t));
 }
 
 DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
 {
-	module_data_t *exe;	
+	module_data_t *exe;
 	const char *exe_name = NULL;
 
 	dr_set_client_name("DrControlFlow", "http://firodj.wordpress.com");
@@ -407,15 +433,20 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
     mutex = dr_mutex_create();
     tls_idx = drmgr_register_tls_field();
 
+    hashtable_init_ex(&sym_info_table, 6, HASH_INTPTR, false, false, sym_info_entry_free, NULL, NULL);
+
     exe = dr_get_main_module();
     dr_fprintf(info_file, 
         "from collections import namedtuple\n"
         "Module = namedtuple('Module', ['name', 'start', 'end', 'entry'])\n"
         "Symbol = namedtuple('Symbol', ['entry', 'module', 'name', 'ordinal'])\n"
-        "Block  = namedtuple('Block',  ['entry', 'module', 'count', 'last'])\n"
+        "Block  = namedtuple('Block',  ['entry', 'module', 'end', 'last'])\n"
+        "Function = namedtuple('Function',  ['entry', 'end', 'name'])\n"
         "modules = dict()\n"
         "symbols = dict()\n"
         "blocks  = dict()\n"
+        "functions = dict()\n"
+        "labels  = dict()\n"
         );
     if (exe) {
         exe_start = exe->start;

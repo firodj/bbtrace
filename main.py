@@ -9,6 +9,7 @@ import capstone
 
 sys.path.append(os.getenv('PSX_PATH'))
 import trace_info
+import trace_label
 
 def find_pe_section(pe, rva):
 	for section in pe.sections:
@@ -83,7 +84,11 @@ class Main:
 			entry = self.d.get_trace(j)
 			b = trace_info.blocks.get(entry)
 			if b:
-				print b
+				f = trace_label.functions.get(entry)
+				if f:
+					print b,f
+				else:
+					print b
 				continue
 
 			s = trace_info.symbols.get(entry)
@@ -93,6 +98,9 @@ class Main:
 
 			print entry
 
+	def parse(self):
+		pass
+
 if __name__ == '__main__':
 	main = Main()
-	main.load_pe()
+	main.run()
