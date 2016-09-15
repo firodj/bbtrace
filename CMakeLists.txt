@@ -1,11 +1,5 @@
 cmake_minimum_required(VERSION 3.4)
 
-# Howto:
-# \> mkdir build
-# \> cd build
-# build\> cmake -DDynamoRIO_DIR=%DYNAMORIO_HOME%/cmake ..
-# build\> nmake -f Makefile
-
 project(rE-pSX)
 
 find_package(DynamoRIO 6.0)
@@ -17,7 +11,3 @@ add_library(controlflow SHARED controlflow.c)
 configure_DynamoRIO_client(controlflow)
 use_DynamoRIO_extension(controlflow drmgr)
 use_DynamoRIO_extension(controlflow drwrap)
-
-add_executable(tracedump tracedump.c)
-configure_DynamoRIO_standalone(tracedump)
-configure_DynamoRIO_decoder(tracedump)
