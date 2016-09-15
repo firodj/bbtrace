@@ -3,26 +3,27 @@
 import pefile
 import os, sys
 import struct
+import pefile
 
 sys.path.append(os.getenv('PSX_PATH'))
 import trace_info
 
 def get_registry_value(key, subkey, value):
-    import _winreg
-    key = getattr(_winreg, key)
-    handle = _winreg.OpenKey(key, subkey)
-    (value, type) = _winreg.QueryValueEx(handle, value)
-    return value
+	import _winreg
+	key = getattr(_winreg, key)
+	handle = _winreg.OpenKey(key, subkey)
+	(value, type) = _winreg.QueryValueEx(handle, value)
+	return value
 
 cputype = get_registry_value(
-    "HKEY_LOCAL_MACHINE", 
-    "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-    "ProcessorNameString")
+	"HKEY_LOCAL_MACHINE", 
+	"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+	"ProcessorNameString")
 
 cpuspeed = get_registry_value(
-    "HKEY_LOCAL_MACHINE", 
-    "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-    "~MHz")
+	"HKEY_LOCAL_MACHINE", 
+	"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+	"~MHz")
 
 class TraceData:
 	def __init__(self, data, base_ts):
@@ -116,11 +117,36 @@ class TraceLog:
 		
 		return TraceData(data, self.base_ts)
 
+def find_pe_section(pe, rva):
+	for section in pe.sections:
+		if section.contains_rva(rva):
+			return section
+
 class Main:
 	def __init__(self):
 		pass
 
+	def load_pe(self):
+		fname = os.path.join(os.getenv('PSX_PATH'), 'psxfin.exe');
+		pe = pefile.PE(fname)
+
+		eop = pe.OPTIONAL_HEADER.AddressOfEntryPoint
+		print hex(pe.OPTIONAL_HEADER.ImageBase + eop)
+		code_section = find_pe_section(pe, eop)
+		
+		print("[+] Code section found at offset: "
+			  "{:#x} [size: {:#x}]".format(code_section.PointerToRawData,
+										  code_section.SizeOfRawData))
+
+		# get first 10 bytes at entry point and dump them
+		code_at_oep = code_section.get_data(eop, 10)
+		print("[*] Code at EOP:\n{}".
+			  format(" ".join("{:02x}".format(ord(c)) for c in code_at_oep)))
+
+		self.pe = pe
+
 	def run(self):
+		
 		self.tl = TraceLog(0)
 		for i in xrange(0, 24):
 			self.d = self.tl.get_data(i)
@@ -128,7 +154,7 @@ class Main:
 
 			print self.d
 
-			for j in xrange(0, min(10, self.d.get_count())):
+			for j in xrange(0, min(100, self.d.get_count())):
 				entry = self.d.get_trace(j)
 				b = trace_info.blocks.get(entry)
 				if b:
