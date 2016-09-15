@@ -59,14 +59,17 @@ class Main:
 			print("0x%x:\t%s\t%s" %(i.address, i.mnemonic, i.op_str))
 
 		addr = 0x522144 - pe.OPTIONAL_HEADER.ImageBase
-		addr = 0x14246a - pe.OPTIONAL_HEADER.ImageBase
+		v = pe.get_memory_mapped_image()[addr:addr+4]
+		print "0x522144 =", [hex(i) for i in struct.unpack('<I', v)];
+		
+		#addr = 0x14246a - pe.OPTIONAL_HEADER.ImageBase
 		#data_section = find_pe_section(pe, addr)
 		#v = data_section.get_data(addr, 4)
-		v = pe.get_memory_mapped_image()[addr:addr+40]
+		#v = pe.get_memory_mapped_image()[addr:addr+40]
 		#print repr(v), hex(struct.unpack('<I', v)[0])
 
-		for i in md.disasm(v, pe.OPTIONAL_HEADER.ImageBase+ addr):
-			print("0x%x:\t%s\t%s" %(i.address, i.mnemonic, i.op_str))
+		#for i in md.disasm(v, pe.OPTIONAL_HEADER.ImageBase+ addr):
+		#	print("0x%x:\t%s\t%s" %(i.address, i.mnemonic, i.op_str))
 
 		self.pe = pe
 
