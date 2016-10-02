@@ -1,5 +1,12 @@
 ### Basic Block Trace: DynamoRIO client ###
 
+This clients will record the code flow by basic block address.
+
+How to build:
 ```
-cmake -DDynamoRIO_DIR=%DYNAMORIO_HOME%/cmake
+mkdir build
+cd build
+
+cmake -G "Visual Studio 12" -DDynamoRIO_DIR=d:\LIB\dynamorio\build\cmake ..
+cmake --build . --config RelWithDebInfo
 ```

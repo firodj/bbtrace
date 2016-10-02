@@ -383,7 +383,7 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
 	const char *exe_name = NULL;
     const char *trace_filename = bbtrace_log_filename(++log_count);
 
-	dr_set_client_name("BBTrace", "http://firodj.wordpress.com");
+	dr_set_client_name("Code Flow Record 'BBTrace'", "https://github.com/firodj/bbtrace");
 
 	trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);    
     if (trace_file == INVALID_FILE) {

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.4)
 
 option(test "Build all tests." OFF)
 
-project(rE-pSX)
+project(bbtrace)
 
 find_package(DynamoRIO 6.0)
 if (NOT DynamoRIO_FOUND)
