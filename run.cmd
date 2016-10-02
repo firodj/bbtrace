@@ -6,6 +6,7 @@ IF [%1]==[] (
 )
 
 SET LOCAL=%~dp0
+SET LOCAL=%LOCAL:~0,-1%
 
 REM Example: run -only_from_app -logdir %LOCAL%\logs
 IF [%1]==[drltrace] (
@@ -21,6 +22,9 @@ SET ARGS=-logdir %LOCAL%\logs -c %LOCAL%\build\%1.dll %2 %3 %4 %5 %6 %7 %8 %9
 
 :run
 
-echo %DYNAMORIO_HOME%\bin32\drrun.exe -syntax_intel %ARGS% -- EXECUTABLE
+rem set DYNAMORIO_HOME=D:\LIB\dynamorio\build
+echo Please type:
+echo.
+echo D:\LIB\dynamorio\build\bin32\drrun.exe -syntax_intel %ARGS% -- EXECUTABLE
 
 :exit
