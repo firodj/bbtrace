@@ -33,8 +33,9 @@ extern "C" {
 #endif
 
 const char *bbtrace_log_filename(uint);
-const char *bbtrace_formatinfo_module(module_data_t*);
+const char *bbtrace_formatinfo_module(const module_data_t*);
 const char *bbtrace_formatinfo_symbol(dr_symbol_export_t*, app_pc, app_pc);
+const char *bbtrace_formatinfo_symbol_import(dr_symbol_import_t *, const char *);
 const char *bbtrace_formatinfo_block(app_pc, app_pc, uint);
 uint instrlist_app_length(void*, instrlist_t*);
 uint instrlist_length(void*, instrlist_t*);

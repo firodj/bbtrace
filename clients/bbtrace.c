@@ -22,18 +22,19 @@ static void dump_check_overflow(size_t request_size)
     log_size += request_size;
     if (log_size > MAX_TRACE_LOG)
     {
-        const char *trace_filename = bbtrace_log_filename(++log_count);        
+        const char *trace_filename = bbtrace_log_filename(++log_count);
 
         dr_close_file(trace_file);
+
         trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+		if (trace_file == INVALID_FILE) {
+			dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
+		} else {
+			dr_printf("Trace File: %s\n", trace_filename);
+		}
+
         log_size -= MAX_TRACE_LOG;
     }
-}
-
-static void dump_pkt(void *data, size_t size)
-{
-    dump_check_overflow(size);
-    dr_write_file(trace_file, data, size);
 }
 
 static void dump_data(per_thread_t *tls_field)
@@ -46,16 +47,22 @@ static void dump_data(per_thread_t *tls_field)
     if (!count) return;
 
     sz = sizeof(app_pc) * count;
-    
+
     pkt_trace.header.code = PKT_CODE_TRACE;
     pkt_trace.header.ts = tls_field->ts;
-    pkt_trace.header.thread = tls_field->thread;    
+    pkt_trace.header.thread = tls_field->thread;
     pkt_trace.size = count;
 
-    dump_check_overflow( sz + sizeof(pkt_trace) );
+    dr_mutex_lock(mutex);
 
+    dump_check_overflow( sz + sizeof(pkt_trace) );
+	
     dr_write_file(trace_file, &pkt_trace, sizeof(pkt_trace));
     dr_write_file(trace_file, pc_data, sz);
+
+	//dr_printf("Dump Trace: %d bytes\n", sz + sizeof(pkt_trace));
+
+	dr_mutex_unlock(mutex);
 
     tls_field->pos = 0;
     tls_field->ts = 0;
@@ -83,9 +90,9 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     });
 
     if (ret_addr) {
-        mod = dr_lookup_module(ret_addr);        
+        mod = dr_lookup_module(ret_addr);
         if (mod) {
-        	from_exe = mod->start == exe_start;
+			from_exe = mod->start == exe_start;
 			dr_free_module_data(mod);
 		}
     }
@@ -93,7 +100,7 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     if (!from_exe) return;
 
     pc_data[tls_field->pos++] = func;
-    if (tls_field->pos >= BUF_TOTAL) {      
+    if (tls_field->pos >= BUF_TOTAL) {
         dump_data(tls_field);
     }
 
@@ -150,11 +157,16 @@ static void iterate_exports(const module_data_t *mod, bool add)
 static void iterate_imports(const module_data_t *mod)
 {
     const char *mod_name = dr_module_preferred_name(mod);
+        
     dr_symbol_import_iterator_t *imp_iter =
         dr_symbol_import_iterator_start(mod->handle, NULL);
     while (dr_symbol_import_iterator_hasnext(imp_iter)) {
         dr_symbol_import_t *sym = dr_symbol_import_iterator_next(imp_iter);
-        dr_printf("IMPORT %s!%s@%d\n", sym->modname, sym->name, sym->ordinal);
+
+        const char *info = bbtrace_formatinfo_symbol_import(sym, mod_name);
+
+        dr_fprintf(info_file, info);
+        dr_fprintf(info_file, ",\n");
     }
     dr_symbol_import_iterator_stop(imp_iter);
 }
@@ -186,19 +198,19 @@ static void event_thread_init(void *drcontext)
         dr_printf("MAIN-THREAD:"PFX"\n", main_thread);
     }
     else {
-   		dr_printf("THREAD:"PFX"\n", thread_id);
+		dr_printf("THREAD:"PFX"\n", thread_id);
     }
 
 	drmgr_set_tls_field(drcontext, tls_idx, tls_field);
-	memset(tls_field, 0, tls_field_size);    
+	memset(tls_field, 0, tls_field_size);
     tls_field->thread = thread_id;
 }
 
 static void event_thread_exit(void *drcontext)
-{    
+{
 	per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
     size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
- 
+
 	dr_printf("EXIT-THREAD:"PFX"\n", tls_field->thread);
 
 	dump_data(tls_field);
@@ -209,10 +221,10 @@ static void event_thread_exit(void *drcontext)
 
 static void clean_call(uint count)
 {
-    void *drcontext = dr_get_current_drcontext();    
+    void *drcontext = dr_get_current_drcontext();
 
     per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
-    
+
     dump_data(tls_field);
 }
 
@@ -220,14 +232,14 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 	void *tag, instrlist_t *bb, bool for_trace, bool translating, OUT void **user_data)
 {
 	instr_t *instr = instrlist_first(bb);
-	app_pc src = instr_get_app_pc(instr);	
+	app_pc src = instr_get_app_pc(instr);
 	module_data_t* mod = dr_lookup_module(src);
 
 	*user_data = NULL;
 
 	if (mod) {
 		if (mod->start == exe_start) {
-            uint length = instrlist_app_length(drcontext, bb);            
+            uint length = instrlist_app_length(drcontext, bb);
             const char *info = bbtrace_formatinfo_block(src, mod->start, length);
 
             dr_fprintf(info_file, info);
@@ -237,11 +249,11 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 		}
 		dr_free_module_data(mod);
 	}
-	
+
 	return DR_EMIT_DEFAULT;
 }
 
-static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag, 
+static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 	instrlist_t *bb, instr_t *instr, bool for_trace, bool translating, void *user_data)
 {
 	if (instr == (instr_t*)user_data/*first instr*/) {
@@ -250,13 +262,13 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
         instr_t *goto_skip_rdtsc = INSTR_CREATE_label(drcontext);
 
 		// per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
-        // dr_using_all_private_caches()?	        
+        // dr_using_all_private_caches()?
 
 		dr_save_arith_flags(drcontext, bb, instr, SPILL_SLOT_1);
 		dr_save_reg(drcontext, bb, instr, DR_REG_XCX, SPILL_SLOT_2);
 		dr_save_reg(drcontext, bb, instr, DR_REG_XBX, SPILL_SLOT_3);
-		
-		drmgr_insert_read_tls_field(drcontext, tls_idx, bb, instr, DR_REG_XBX);		
+
+		drmgr_insert_read_tls_field(drcontext, tls_idx, bb, instr, DR_REG_XBX);
 
         // xcx = tls_field->pos
 		instrlist_meta_preinsert(bb, instr,
@@ -307,19 +319,19 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 
         dr_restore_reg(drcontext, bb, instr, DR_REG_XAX, SPILL_SLOT_4);
         dr_restore_reg(drcontext, bb, instr, DR_REG_XDX, SPILL_SLOT_5);
-        
+
         // label skip_rdtsc:
         instrlist_meta_preinsert(bb, instr, goto_skip_rdtsc);
 
         // xcx++
 		instrlist_meta_preinsert(bb, instr,
-			INSTR_CREATE_inc(drcontext,	
+			INSTR_CREATE_inc(drcontext,
 				opnd_create_reg(DR_REG_XCX))
 			);
 
         // xcx ? BUF_TOTAL
 		instrlist_meta_preinsert(bb, instr,
-			INSTR_CREATE_cmp(drcontext, 
+			INSTR_CREATE_cmp(drcontext,
 				opnd_create_reg(DR_REG_XCX),
 				OPND_CREATE_INT32(BUF_TOTAL))
 			);
@@ -336,7 +348,7 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 			INSTR_CREATE_jcc(drcontext, OP_jb, opnd_create_instr(goto_skip))
 			);
 
-		dr_insert_clean_call(drcontext, bb, instr, 
+		dr_insert_clean_call(drcontext, bb, instr,
 			(void *) clean_call,
             false,
             1,
@@ -355,7 +367,7 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 }
 
 static void event_exit(void)
-{	
+{
     drmgr_unregister_tls_field(tls_idx);
 
 	drwrap_exit();
@@ -373,26 +385,19 @@ static void event_exit(void)
 
 static void
 sym_info_entry_free(void *entry)
-{   
+{
     dr_global_free(entry, sizeof(dr_symbol_export_t));
 }
 
-DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
+DR_EXPORT void
+dr_client_main(client_id_t id, int argc, const char *argv[])
 {
 	module_data_t *exe;
 	const char *exe_name = NULL;
     const char *trace_filename = bbtrace_log_filename(++log_count);
+	const char *info_filename = "bbtrace.info.json";
 
 	dr_set_client_name("Code Flow Record 'BBTrace'", "https://github.com/firodj/bbtrace");
-
-	trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);    
-    if (trace_file == INVALID_FILE) {
-        dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
-    }
-    info_file = dr_open_file("trace.json", DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
-    if (trace_file == INVALID_FILE) {
-        dr_fprintf(STDERR, "Error opening %s\n", "trace.info");        
-    }
 
     drmgr_init();
     drwrap_init();
@@ -402,17 +407,31 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
 	dr_register_exit_event(event_exit);
 	drmgr_register_thread_init_event(event_thread_init);
     drmgr_register_thread_exit_event(event_thread_exit);
-	
+
 	drmgr_register_bb_instrumentation_event(event_bb_analysis, event_bb_insert, NULL);
 	drmgr_register_module_load_event(event_module_load);
     drmgr_register_module_unload_event(event_module_unload);
-
-    dr_enable_console_printing();
 
     mutex = dr_mutex_create();
     tls_idx = drmgr_register_tls_field();
 
     hashtable_init_ex(&sym_info_table, 6, HASH_INTPTR, false, false, sym_info_entry_free, NULL, NULL);
+    
+	dr_enable_console_printing();
+
+	trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+    if (trace_file == INVALID_FILE) {
+        dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
+    } else {
+		dr_printf("Trace File: %s\n", trace_filename);
+	}
+
+    info_file = dr_open_file(info_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+    if (trace_file == INVALID_FILE) {
+        dr_fprintf(STDERR, "Error opening %s\n", info_filename);
+    } else {
+		dr_printf("Info File: %s\n", info_filename);
+	}
 
     exe = dr_get_main_module();
     dr_fprintf(info_file, "[\n");
