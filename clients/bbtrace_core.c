@@ -1,4 +1,7 @@
 #include "bbtrace_core.h"
+#include <intrin.h>  
+  
+#pragma intrinsic(__rdtsc)
 
 static uint64 g_log_size;
 static uint g_log_count;
@@ -132,7 +135,7 @@ bbtrace_dump_thread_data(per_thread_t *tls_field)
     dr_mutex_unlock(g_dump_mutex);
 
     tls_field->pos = 0;
-    tls_field->ts = 0;
+    tls_field->ts = __rdtsc();
 
     return request_size;
 }
@@ -161,6 +164,16 @@ instrlist_length(void *drcontext, instrlist_t *ilist)
         length += instr_length(drcontext, walk_instr);
     }
     return length;
+}
+
+per_thread_t*
+create_bbtrace_thread_data(void *drcontext)
+{
+    size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
+    per_thread_t *tls_field = (per_thread_t *)dr_thread_alloc(drcontext, tls_field_size);
+    memset(tls_field, 0, tls_field_size);
+    tls_field->ts = __rdtsc();
+    return tls_field;
 }
 
 void

@@ -40,6 +40,7 @@ const char *bbtrace_formatinfo_block(app_pc, app_pc, uint);
 size_t bbtrace_dump_thread_data(per_thread_t*);
 uint instrlist_app_length(void*, instrlist_t*);
 uint instrlist_length(void*, instrlist_t*);
+per_thread_t* create_bbtrace_thread_data(void *);
 void bbtrace_init();
 void bbtrace_shutdown();
 #ifdef __cplusplus

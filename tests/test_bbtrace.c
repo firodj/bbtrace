@@ -6,13 +6,11 @@ static thread_id_t main_thread = 0;
 void test_bbtrace_log_filename()
 {
 	const char *actual = NULL;
-	
+
 	actual = bbtrace_log_filename(0);
-	// "trace.log";
 	dr_fprintf(STDERR, "%s\n", actual);
 
 	actual = bbtrace_log_filename(10);
-	// "trace.log.10";
 	dr_fprintf(STDERR, "%s\n", actual);
 }
 
@@ -53,12 +51,12 @@ void test_bbtrace_formatinfo_block() {
 
 void test_instrlist_app_length(void *drcontext) {
 	uint actual = 0;
-	
+
 	instrlist_t* ilist = instrlist_create(drcontext);
 	if (NULL == ilist) {
 		return;
 	}
-	
+
 	instrlist_append(ilist,
 		 INSTR_CREATE_nop(drcontext));
 	instrlist_append(ilist,
@@ -74,19 +72,35 @@ void test_instrlist_app_length(void *drcontext) {
 }
 
 void test_bbtrace_dump_thread_data(void *drcontext) {
-  size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
-  per_thread_t *tls_field = (per_thread_t *)dr_thread_alloc(drcontext, tls_field_size);
- 
   bbtrace_init();
-  bbtrace_dump_thread_data(tls_field);
+
+  per_thread_t *tls_field = create_bbtrace_thread_data(drcontext);
+  size_t written;
+
+  dr_fprintf(STDERR, "pos=%u, ts=%u\n", tls_field->pos, tls_field->ts);
+  dr_fprintf(STDERR, "filling thread data (> 4G) ...\n");
+  for(uint64 i=0; i < (5*1024*1024*256); i++) {
+    byte *data = (byte*)tls_field + sizeof(per_thread_t);
+    app_pc *pc_data = (app_pc*)data;
+
+    pc_data[tls_field->pos++] = (app_pc)(i % 256);
+    if (tls_field->pos >= BUF_TOTAL) {
+        written = bbtrace_dump_thread_data(tls_field);
+    }
+  }
+  dr_fprintf(STDERR, "last written = %u\n", written);
+
+  written = bbtrace_dump_thread_data(tls_field);
+  dr_fprintf(STDERR, "flushed written = %u\n", written);
+
   bbtrace_shutdown();
 }
 
 /*
-TEST(oh, ah) {	
+TEST(oh, ah) {
 	instrlist_t* ilist = instrlist_create(drcontext);
 	instr_t* where = NULL;
-	uint length = 0;	
+	uint length = 0;
 
 	printf("drcontext = "PFX"\n", drcontext);
 	//byte opcodes[17*2];
@@ -171,7 +185,7 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
 	dr_enable_console_printing();
 
 	dr_register_exit_event(exit_event);
-	dr_register_bb_event(bb_event);	
+	dr_register_bb_event(bb_event);
 	dr_register_thread_init_event(thread_init_event);
 	dr_register_thread_exit_event(thread_exit_event);
 }
