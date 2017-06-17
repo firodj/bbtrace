@@ -19,13 +19,8 @@ void test_bbtrace_log_filename()
 void test_bbtrace_formatinfo_module() {
 	module_data_t exe;
 	const char *actual = NULL;
-	/*
-	const char *expected = "{\"module_name\":\"notepad.exe\","
-		"\"module_start\":\"0x00400000\","
-		"\"module_end\":\"0x00440000\","
-		"\"module_entry\":\"0x0040a000\"}";
-	*/
-	memset(&exe, sizeof(exe), 0);
+
+	memset(&exe, 0, sizeof(exe));
 
 	exe.start = (app_pc)0x400000;
 	exe.end   = (app_pc)0x440000;
@@ -39,13 +34,8 @@ void test_bbtrace_formatinfo_module() {
 void test_bbtrace_formatinfo_symbol() {
 	dr_symbol_export_t sym;
 	const char *actual = NULL;
-	/*
-	const char *expected = "{\"symbol_entry\":\"0x000040b0\","
-		"\"module_start_ref\":\"0x000030f0\","
-		"\"symbol_name\":\"GetMaxMin\","
-		"\"symbol_ordinal\":99}";
-	*/
-	memset(&sym, sizeof(sym), 0);
+
+	memset(&sym, 0, sizeof(sym));
 
 	sym.name = "GetMaxMin";
 	sym.ordinal = 99;
@@ -56,11 +46,6 @@ void test_bbtrace_formatinfo_symbol() {
 
 void test_bbtrace_formatinfo_block() {
 	const char *actual = NULL;
-	/*
-	const char *expected = "{\"block_entry\":\"0x00004000\","
-	    "\"module_start_ref\":\"0x00003000\","
-	    "\"block_end\":\"0x0000400c\"}";
-	*/
 
 	actual = bbtrace_formatinfo_block((app_pc)0x4000, (app_pc)0x3000, 12);
 	dr_fprintf(STDERR, "%s\n", actual);
@@ -86,6 +71,15 @@ void test_instrlist_app_length(void *drcontext) {
 	instrlist_clear_and_destroy(drcontext, ilist);
 
 	dr_fprintf(STDERR, "%d\n", actual);
+}
+
+void test_bbtrace_dump_thread_data(void *drcontext) {
+  size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
+  per_thread_t *tls_field = (per_thread_t *)dr_thread_alloc(drcontext, tls_field_size);
+ 
+  bbtrace_init();
+  bbtrace_dump_thread_data(tls_field);
+  bbtrace_shutdown();
 }
 
 /*
@@ -117,11 +111,23 @@ TEST(oh, ah) {
 
 static void run_tests(void *drcontext)
 {
+	dr_fprintf(STDERR, "[ ] test_bbtrace_log_filename:\n");
 	test_bbtrace_log_filename();
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_formatinfo_module:\n");
 	test_bbtrace_formatinfo_module();
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_formatinfo_symbol:\n");
 	test_bbtrace_formatinfo_symbol();
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_formatinfo_block:\n");
 	test_bbtrace_formatinfo_block();
+
+	dr_fprintf(STDERR, "[ ] test_instrlist_app_length:\n");
 	test_instrlist_app_length(drcontext);
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_dump_thread_data:\n");
+  test_bbtrace_dump_thread_data(drcontext);
 }
 
 static dr_emit_flags_t
@@ -167,5 +173,5 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
 	dr_register_exit_event(exit_event);
 	dr_register_bb_event(bb_event);	
 	dr_register_thread_init_event(thread_init_event);
-    dr_register_thread_exit_event(thread_exit_event);
+	dr_register_thread_exit_event(thread_exit_event);
 }

@@ -1,5 +1,10 @@
 #include "bbtrace_core.h"
 
+static uint64 g_log_size;
+static uint g_log_count;
+static void *g_dump_mutex;
+static file_t g_trace_file;
+
 const char *
 bbtrace_log_filename(uint count)
 {
@@ -81,6 +86,57 @@ bbtrace_formatinfo_block(app_pc block_entry, app_pc mod_start, uint length)
 	return info;
 }
 
+size_t
+bbtrace_dump_thread_data(per_thread_t *tls_field)
+{
+    size_t sz;
+    pkt_trace_t pkt_trace;
+    app_pc* pc_data = (app_pc*)((byte*)tls_field + sizeof(per_thread_t));
+    uint count = tls_field->pos;
+
+    if (!count) return 0;
+
+    sz = sizeof(app_pc) * count;
+
+    pkt_trace.header.code = PKT_CODE_TRACE;
+    pkt_trace.header.ts = tls_field->ts;
+    pkt_trace.header.thread = tls_field->thread;
+    pkt_trace.size = count;
+
+    dr_mutex_lock(g_dump_mutex);
+
+    size_t request_size = sz + sizeof(pkt_trace);
+    
+    g_log_size += request_size;
+    if (g_log_size > MAX_TRACE_LOG)
+    {
+        const char *trace_filename = bbtrace_log_filename(++g_log_count);
+
+        dr_close_file(g_trace_file);
+
+        g_trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+        if (g_trace_file == INVALID_FILE) {
+            dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
+        } else {
+            dr_printf("Trace File: %s\n", trace_filename);
+        }
+
+        g_log_size -= MAX_TRACE_LOG;
+    }
+    
+    dr_write_file(g_trace_file, &pkt_trace, sizeof(pkt_trace));
+    dr_write_file(g_trace_file, pc_data, sz);
+
+    //dr_printf("Dump Trace: %d bytes\n", sz + sizeof(pkt_trace));
+
+    dr_mutex_unlock(g_dump_mutex);
+
+    tls_field->pos = 0;
+    tls_field->ts = 0;
+
+    return request_size;
+}
+
 uint
 instrlist_app_length(void *drcontext, instrlist_t *ilist)
 {
@@ -105,4 +161,28 @@ instrlist_length(void *drcontext, instrlist_t *ilist)
         length += instr_length(drcontext, walk_instr);
     }
     return length;
+}
+
+void
+bbtrace_init()
+{
+  g_log_size = 0;
+  g_log_count = 0;
+  g_dump_mutex = dr_mutex_create();
+  
+  const char *trace_filename = bbtrace_log_filename(++g_log_count);
+
+  g_trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+  if (g_trace_file == INVALID_FILE) {
+      dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
+  } else {
+      dr_printf("Trace File: %s\n", trace_filename);
+  }
+}
+
+void
+bbtrace_shutdown()
+{
+  dr_mutex_destroy(g_dump_mutex);
+  dr_close_file(g_trace_file);
 }
