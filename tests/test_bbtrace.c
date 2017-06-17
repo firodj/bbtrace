@@ -142,6 +142,8 @@ static void run_tests(void *drcontext)
 
 	dr_fprintf(STDERR, "[ ] test_bbtrace_dump_thread_data:\n");
   test_bbtrace_dump_thread_data(drcontext);
+	
+  dr_fprintf(STDERR, "[ ] DONE testing.\n");
 }
 
 static dr_emit_flags_t

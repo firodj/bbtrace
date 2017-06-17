@@ -11,4 +11,10 @@ bbtrace.log.10
 3
 [ ] test_bbtrace_dump_thread_data:
 Trace File: bbtrace.log.1
+pos=0, ts=%u
+filling thread data (> 4G) ...
+Trace File: bbtrace.log.2
+last written = 4194324
+flushed written = 0
+[ ] DONE testing.
 hello world
