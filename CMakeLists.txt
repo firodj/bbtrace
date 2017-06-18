@@ -16,7 +16,8 @@ target_include_directories(bbtrace_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/clien
 if (test)
 	# enable_testing()
 
-	add_executable(test_app tests/test_app.c)
+	add_executable(test_app tests/test_app.cpp)
+  set_target_properties(test_app PROPERTIES COMPILE_FLAGS /EHa)
 
 	add_library(test_bbtrace SHARED tests/test_bbtrace.c)
 	target_link_libraries(test_bbtrace bbtrace_core)

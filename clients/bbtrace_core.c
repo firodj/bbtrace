@@ -12,10 +12,11 @@ const char *
 bbtrace_log_filename(uint count)
 {
 	static char filename[32];
+  const char *app_name = dr_get_application_name();
 	if (count > 0)
-		dr_snprintf(filename, sizeof(filename), "bbtrace.log.%d", count);
+		dr_snprintf(filename, sizeof(filename), "bbtrace.%s.log.%04d", app_name, count);
 	else
-		dr_snprintf(filename, sizeof(filename), "bbtrace.log");
+		dr_snprintf(filename, sizeof(filename), "bbtrace.%s.log", app_name);
 	return filename;
 }
 
@@ -26,12 +27,12 @@ bbtrace_formatinfo_module(const module_data_t *mod)
 	const char *mod_name = dr_module_preferred_name(mod);
 
 	dr_snprintf(info, sizeof(info),
-		"{"
-		"\"module_name\":\"%s\","
-		"\"module_start\":\""PFX"\","
-		"\"module_end\":\""PFX"\","
-		"\"module_entry\":\""PFX"\","
-		"\"module_path\":\"%s\""
+		"{\n"
+		"\t\"module_name\":\"%s\",\n"
+		"\t\"module_start\":\""PFX"\",\n"
+		"\t\"module_end\":\""PFX"\",\n"
+		"\t\"module_entry\":\""PFX"\",\n"
+		"\t\"module_path\":\"%s\"\n"
 		"}",
 		mod_name, mod->start, mod->end, mod->entry_point,
 		mod->full_path);
@@ -45,11 +46,11 @@ bbtrace_formatinfo_symbol(dr_symbol_export_t *sym, app_pc mod_start, app_pc func
 	static char info[256];
 
 	dr_snprintf(info, sizeof(info),
-        "{"
-        "\"symbol_entry\":\""PFX"\","
-        "\"module_start_ref\":\""PFX"\","
-        "\"symbol_name\":\"%s\","
-        "\"symbol_ordinal\":%d"
+        "{\n"
+        "\t\"symbol_entry\":\""PFX"\",\n"
+        "\t\"module_start_ref\":\""PFX"\",\n"
+        "\t\"symbol_name\":\"%s\",\n"
+        "\t\"symbol_ordinal\":%d\n"
         "}",
         func_entry, mod_start, sym->name, sym->ordinal);
 
@@ -62,11 +63,11 @@ bbtrace_formatinfo_symbol_import(dr_symbol_import_t *sym, const char *mod_name)
 	static char info[256];
 
 	dr_snprintf(info, sizeof(info),
-        "{"
-        "\"module_name\":\"%s\","
-        "\"import_module_name\":\"%s\","
-        "\"symbol_name\":\"%s\","
-        "\"symbol_ordinal\":%d"
+        "{\n"
+        "\t\"module_name\":\"%s\",\n"
+        "\t\"import_module_name\":\"%s\",\n"
+        "\t\"symbol_name\":\"%s\",\n"
+        "\t\"symbol_ordinal\":%d\n"
         "}",
         mod_name, sym->modname, sym->name, sym->ordinal);
 
@@ -79,14 +80,33 @@ bbtrace_formatinfo_block(app_pc block_entry, app_pc mod_start, uint length)
 	static char info[256];
 
 	dr_snprintf(info, sizeof(info),
-		"{"
-		"\"block_entry\":\""PFX"\","
-		"\"module_start_ref\":\""PFX"\","
-		"\"block_end\":\""PFX"\""
+		"{\n"
+		"\t\"block_entry\":\""PFX"\",\n"
+		"\t\"module_start_ref\":\""PFX"\",\n"
+		"\t\"block_end\":\""PFX"\"\n"
 		"}",
 		block_entry, mod_start, block_entry+length);
 
 	return info;
+}
+
+const char *
+bbtrace_formatinfo_exception(dr_exception_t *excpt)
+{
+	static char info[256];
+
+  void *fault_address = (void *)excpt->record->ExceptionInformation[1];
+	dr_snprintf(info, sizeof(info),
+      "{\n"
+      "\t\"exception_code\":\""PFX"\",\n"
+      "\t\"exception_address\":\""PFX"\",\n"
+      "\t\"fault_address\":\""PFX"\"\n"
+      "}",
+      excpt->record->ExceptionCode, 
+      excpt->record->ExceptionAddress,
+      fault_address);
+
+  return info;
 }
 
 size_t

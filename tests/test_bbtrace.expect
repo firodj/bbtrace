@@ -1,12 +1,27 @@
 [ ] test_bbtrace_log_filename:
-bbtrace.log
-bbtrace.log.10
+bbtrace.test_app.exe.log
+bbtrace.test_app.exe.log.0010
 [ ] test_bbtrace_formatinfo_module:
-{"module_name":"notepad.exe","module_start":"0x00400000","module_end":"0x00440000","module_entry":"0x0040a000","module_path":"<NULL>"}
+{
+        "module_name":"notepad.exe",
+        "module_start":"0x00400000",
+        "module_end":"0x00440000",
+        "module_entry":"0x0040a000",
+        "module_path":"<NULL>"
+}
 [ ] test_bbtrace_formatinfo_symbol:
-{"symbol_entry":"0x000040b0","module_start_ref":"0x000030f0","symbol_name":"GetMaxMin","symbol_ordinal":99}
+{
+        "symbol_entry":"0x000040b0",
+        "module_start_ref":"0x000030f0",
+        "symbol_name":"GetMaxMin",
+        "symbol_ordinal":99
+}
 [ ] test_bbtrace_formatinfo_block:
-{"block_entry":"0x00004000","module_start_ref":"0x00003000","block_end":"0x0000400c"}
+{
+        "block_entry":"0x00004000",
+        "module_start_ref":"0x00003000",
+        "block_end":"0x0000400c"
+}
 [ ] test_instrlist_app_length:
 3
 [ ] test_bbtrace_dump_thread_data:
