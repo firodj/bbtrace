@@ -8,65 +8,10 @@
 
 static app_pc exe_start;
 static thread_id_t main_thread = 0;
-static void *mutex;
 static int tls_idx;
-static file_t trace_file;
 static file_t info_file;
 
-static uint64 log_size = 0;
-static uint log_count = 0;
 static hashtable_t sym_info_table;
-
-static void dump_check_overflow(size_t request_size)
-{
-    log_size += request_size;
-    if (log_size > MAX_TRACE_LOG)
-    {
-        const char *trace_filename = bbtrace_log_filename(++log_count);
-
-        dr_close_file(trace_file);
-
-        trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
-        if (trace_file == INVALID_FILE) {
-            dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
-        } else {
-            dr_printf("Trace File: %s\n", trace_filename);
-        }
-
-        log_size -= MAX_TRACE_LOG;
-    }
-}
-
-static void dump_data(per_thread_t *tls_field)
-{
-    size_t sz;
-    pkt_trace_t pkt_trace;
-    app_pc* pc_data = (app_pc*)((byte*)tls_field + sizeof(per_thread_t));
-    uint count = tls_field->pos;
-
-    if (!count) return;
-
-    sz = sizeof(app_pc) * count;
-
-    pkt_trace.header.code = PKT_CODE_TRACE;
-    pkt_trace.header.ts = tls_field->ts;
-    pkt_trace.header.thread = tls_field->thread;
-    pkt_trace.size = count;
-
-    dr_mutex_lock(mutex);
-
-    dump_check_overflow( sz + sizeof(pkt_trace) );
-    
-    dr_write_file(trace_file, &pkt_trace, sizeof(pkt_trace));
-    dr_write_file(trace_file, pc_data, sz);
-
-    //dr_printf("Dump Trace: %d bytes\n", sz + sizeof(pkt_trace));
-
-    dr_mutex_unlock(mutex);
-
-    tls_field->pos = 0;
-    tls_field->ts = 0;
-}
 
 static void lib_entry(void *wrapcxt, INOUT void **user_data)
 {
@@ -101,7 +46,7 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
 
     pc_data[tls_field->pos++] = func;
     if (tls_field->pos >= BUF_TOTAL) {
-        dump_data(tls_field);
+        bbtrace_dump_thread_data(tls_field);
     }
 
     sym = hashtable_lookup(&sym_info_table, func);
@@ -190,8 +135,7 @@ static void event_thread_init(void *drcontext)
 {
     thread_id_t thread_id = dr_get_thread_id(drcontext);
 
-    size_t tls_field_size = sizeof(per_thread_t) + (sizeof(app_pc) * BUF_TOTAL);
-    per_thread_t *tls_field = (per_thread_t *)dr_thread_alloc(drcontext, tls_field_size);
+    per_thread_t *tls_field = create_bbtrace_thread_data(drcontext);
 
     if (main_thread == 0) {
         main_thread = thread_id;
@@ -202,7 +146,6 @@ static void event_thread_init(void *drcontext)
     }
 
     drmgr_set_tls_field(drcontext, tls_idx, tls_field);
-    memset(tls_field, 0, tls_field_size);
     tls_field->thread = thread_id;
 }
 
@@ -213,19 +156,19 @@ static void event_thread_exit(void *drcontext)
 
     dr_printf("EXIT-THREAD:"PFX"\n", tls_field->thread);
 
-    dump_data(tls_field);
+    bbtrace_dump_thread_data(tls_field);
 
     dr_thread_free(drcontext, tls_field, tls_field_size);
 }
 
 
-static void clean_call(uint count)
+static void clean_call_of_dump_data(uint count)
 {
     void *drcontext = dr_get_current_drcontext();
 
     per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
 
-    dump_data(tls_field);
+    bbtrace_dump_thread_data(tls_field);
 }
 
 static dr_emit_flags_t event_bb_analysis(void *drcontext,
@@ -349,7 +292,7 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
             );
 
         dr_insert_clean_call(drcontext, bb, instr,
-            (void *) clean_call,
+            (void *) clean_call_of_dump_data,
             false,
             1,
             opnd_create_reg(DR_REG_XCX));
@@ -366,16 +309,26 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
     return DR_EMIT_DEFAULT;
 }
 
+static bool
+event_exception(void *drcontext, dr_exception_t *excpt)
+{
+    const char *info = bbtrace_formatinfo_exception(excpt);
+    dr_fprintf(info_file, info);
+    dr_fprintf(info_file, ",\n");
+    
+    return true;
+}
+
 static void event_exit(void)
 {
+    drmgr_unregister_exception_event(event_exception);
+
     drmgr_unregister_tls_field(tls_idx);
 
     drwrap_exit();
     drmgr_exit();
 
-    dr_mutex_destroy(mutex);
-
-    dr_close_file(trace_file);
+    bbtrace_shutdown();
 
     dr_fprintf(info_file, "{}\n]");
     dr_close_file(info_file);
@@ -393,9 +346,12 @@ DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
 {
     module_data_t *exe;
-    const char *exe_name = NULL;
-    const char *trace_filename = bbtrace_log_filename(++log_count);
-    const char *info_filename = "bbtrace.info.json";
+
+    char info_filename[256];
+    
+    dr_snprintf(info_filename, sizeof(info_filename),
+        "%s.info", bbtrace_log_filename(0)
+    );
 
     dr_set_client_name("Code Flow Record 'BBTrace'", "https://github.com/firodj/bbtrace");
 
@@ -412,22 +368,18 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     drmgr_register_module_load_event(event_module_load);
     drmgr_register_module_unload_event(event_module_unload);
 
-    mutex = dr_mutex_create();
+    drmgr_register_exception_event(event_exception);
+
     tls_idx = drmgr_register_tls_field();
 
     hashtable_init_ex(&sym_info_table, 6, HASH_INTPTR, false, false, sym_info_entry_free, NULL, NULL);
     
     dr_enable_console_printing();
 
-    trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
-    if (trace_file == INVALID_FILE) {
-        dr_fprintf(STDERR, "Error opening %s\n", trace_filename);
-    } else {
-        dr_printf("Trace File: %s\n", trace_filename);
-    }
+    bbtrace_init();
 
     info_file = dr_open_file(info_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
-    if (trace_file == INVALID_FILE) {
+    if (info_file == INVALID_FILE) {
         dr_fprintf(STDERR, "Error opening %s\n", info_filename);
     } else {
         dr_printf("Info File: %s\n", info_filename);
