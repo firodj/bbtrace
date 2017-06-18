@@ -1,8 +1,13 @@
 @echo off
 
-IF [%1]==[] (
-  (echo Please suply a client)
-  GOTO exit
+IF "%1"=="" (
+  (echo Please supply a client, eg. `bbtrace`)
+  GOTO:eof
+)
+
+IF "%2"=="" (
+  (echo Please use `--` then application exe)
+  GOTO:eof
 )
 
 SET LOCAL=%~dp0
@@ -23,8 +28,4 @@ SET ARGS=-logdir %LOCAL%\logs -c %LOCAL%\build\RelWithDebInfo\%1.dll %2 %3 %4 %5
 :run
 
 rem set DYNAMORIO_HOME=D:\LIB\dynamorio\build
-echo Please type:
-echo.
-echo %DYNAMORIO_HOME%\bin32\drrun.exe -syntax_intel %ARGS% -- EXECUTABLE
-
-:exit
+%DYNAMORIO_HOME%\bin32\drrun.exe -syntax_intel %ARGS%

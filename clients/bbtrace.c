@@ -202,8 +202,9 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
     if (instr == (instr_t*)user_data/*first instr*/) {
         app_pc start = instr_get_app_pc(instr);
         instr_t *goto_skip = INSTR_CREATE_label(drcontext);
+#ifdef BBTRACE_RDTSC
         instr_t *goto_skip_rdtsc = INSTR_CREATE_label(drcontext);
-
+#endif
         // per_thread_t *tls_field = (per_thread_t *) drmgr_get_tls_field(drcontext, tls_idx);
         // dr_using_all_private_caches()?
 
@@ -220,12 +221,14 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
                 OPND_CREATE_MEM32(DR_REG_XBX, offsetof(per_thread_t, pos)))
             );
 
+#ifdef BBTRACE_RDTSC
         // xcx ? 0
         instrlist_meta_preinsert(bb, instr,
             INSTR_CREATE_test(drcontext,
                 opnd_create_reg(DR_REG_XCX),
                 opnd_create_reg(DR_REG_XCX))
             );
+#endif
 
         // tls_field->pc_data[xcx] = start
         instrlist_meta_preinsert(bb, instr,
@@ -234,6 +237,7 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
                 OPND_CREATE_INT32(start))
             );
 
+#ifdef BBTRACE_RDTSC
         // if (xcx != 0) goto skip_rdtsc
         instrlist_meta_preinsert(bb, instr,
             INSTR_CREATE_jcc(drcontext, OP_jnz, opnd_create_instr(goto_skip_rdtsc))
@@ -265,6 +269,7 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 
         // label skip_rdtsc:
         instrlist_meta_preinsert(bb, instr, goto_skip_rdtsc);
+#endif
 
         // xcx++
         instrlist_meta_preinsert(bb, instr,
