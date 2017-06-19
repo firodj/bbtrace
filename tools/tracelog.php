@@ -17,25 +17,6 @@ class TraceLog
         $this->name = $name;
     }
 
-    public static function main($argv)
-    {
-        if (count($argv) <= 1) {
-            echo "Syntax: $argv[0] <file.log.info>\n";
-            return false;
-        }
-
-        $fname = $argv[1];
-        if (preg_match('/^(.+\.log)\.info$/', $fname, $matches)) {
-            $fname = $matches[1];
-        } else {
-            echo "Error: file name not match <file.log.info>\n";
-            return false;
-        }
-
-        $trace_log = new TraceLog($fname);
-        return $trace_log;
-    }
-
     public function getLogCount()
     {
         if (is_null($this->log_count)) {
@@ -66,7 +47,15 @@ class TraceLog
                 print_r($header);
 
                 $data = unpack('L*', fread($fp, $header['size']*4));
-                print_r($data);
+                foreach($data as $block_id) {
+                    $block_id = sprintf("0x%08x", $block_id);
+                    if (isset($this->blocks[$block_id])) {
+                    } else if (isset($this->symbols[$block_id])) {
+                    } else {
+                        echo "Unknown:\n";
+                        print_r($block_id);
+                    }
+                }
             }
         }
         fclose($fp);
@@ -142,15 +131,30 @@ class TraceLog
         printf("Blocks: %d\nSymbols: %d\n", count($this->blocks), count($this->symbols));
         printf("Modules: %d\nImports: %d\n", count($this->modules), count($this->imports));
         printf("Exceptions: %d\n", count($this->exceptions));
+    }
 
+    public static function main($argv)
+    {
+        if (count($argv) <= 1) {
+            echo "Syntax: $argv[0] <file.log.info>\n";
+            return false;
+        }
+
+        $fname = $argv[1];
+        if (preg_match('/^(.+\.log)\.info$/', $fname, $matches)) {
+            $fname = $matches[1];
+        } else {
+            echo "Error: file name not match <file.log.info>\n";
+            return false;
+        }
+
+        $trace_log = new TraceLog($fname);
+        $trace_log->parseInfo();
+        for ($i=1; $i<=$trace_log->getLogCount(); $i++) {
+            $trace_log->parseLog($i);
+        }
+        return $trace_log;
     }
 }
 
 $trace_log = TraceLog::main($argv);
-
-if ($trace_log) {
-    $trace_log->parseInfo();
-    for ($i=1; $i<=$trace_log->getLogCount(); $i++) {
-        $trace_log->parseLog($i);
-    }
-}
