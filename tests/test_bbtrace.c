@@ -96,6 +96,12 @@ void test_bbtrace_dump_thread_data(void *drcontext) {
   bbtrace_shutdown();
 }
 
+void test_bbtrace_escape_string() {
+  char out[256];
+  bbtrace_escape_string("D:\\With \"Quote\"", out, 256);
+  dr_fprintf(STDERR, "escaped = %s\n", out);
+}
+
 /*
 TEST(oh, ah) {
 	instrlist_t* ilist = instrlist_create(drcontext);
@@ -143,6 +149,9 @@ static void run_tests(void *drcontext)
 	dr_fprintf(STDERR, "[ ] test_bbtrace_dump_thread_data:\n");
   test_bbtrace_dump_thread_data(drcontext);
 	
+	dr_fprintf(STDERR, "[ ] test_bbtrace_escape_string:\n");
+  test_bbtrace_escape_string();
+
   dr_fprintf(STDERR, "[ ] DONE testing.\n");
 }
 

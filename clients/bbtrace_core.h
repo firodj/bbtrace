@@ -3,7 +3,7 @@
 #include "dr_api.h"
 
 typedef enum {
-	PKT_CODE_TRACE
+	PKT_CODE_TRACE = 1
 } pkt_code_t;
 
 #pragma pack(1)
@@ -32,6 +32,7 @@ typedef struct {
 extern "C" {
 #endif
 
+size_t bbtrace_escape_string(const char *, char *, size_t);
 const char *bbtrace_log_filename(uint);
 const char *bbtrace_formatinfo_module(const module_data_t*);
 const char *bbtrace_formatinfo_symbol(dr_symbol_export_t*, app_pc, app_pc);

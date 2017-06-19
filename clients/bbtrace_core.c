@@ -8,6 +8,28 @@ static uint g_log_count;
 static void *g_dump_mutex;
 static file_t g_trace_file;
 
+size_t
+bbtrace_escape_string(const char *str, char *out, size_t n)
+{
+  size_t j=0;
+  if (str) {
+    for (size_t i=0; str[i] && j<n-2; i++) {
+      if (str[i] == '\\') {
+        out[j++] = '\\';
+        out[j++] = '\\';
+      } else
+      if (str[i] == '"') {
+        out[j++] = '\\';
+        out[j++] = '"';
+      } else {
+        out[j++] = str[i];
+      }
+    }
+  }
+  out[j++] = 0;
+  return j;
+}
+
 const char *
 bbtrace_log_filename(uint count)
 {
@@ -25,6 +47,9 @@ bbtrace_formatinfo_module(const module_data_t *mod)
 {
 	static char info[256];
 	const char *mod_name = dr_module_preferred_name(mod);
+  char path[256];
+
+  bbtrace_escape_string(mod->full_path, path, 256);
 
 	dr_snprintf(info, sizeof(info),
 		"{\n"
@@ -35,7 +60,7 @@ bbtrace_formatinfo_module(const module_data_t *mod)
 		"\t\"module_path\":\"%s\"\n"
 		"}",
 		mod_name, mod->start, mod->end, mod->entry_point,
-		mod->full_path);
+		path);
 
 	return info;
 }
