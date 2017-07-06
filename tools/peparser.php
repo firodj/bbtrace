@@ -7,6 +7,7 @@ class PeParser
     private $name;
     private $optMagic;
     private $imageBase;
+    private $numSecs;
 
     const NUM_DIR_ENTRIES = 16;
     const DIR_NAMES = ['EXPORT', 'IMPORT', 'RESOURCE', 'EXCEPTION', 
@@ -20,6 +21,7 @@ class PeParser
     const sizeof_IMAGE_DATA_DIRECTORY = 0x8;
     const sizeof_IMAGE_SECTION_HEADER = 0x28;
     const sizeof_IMAGE_FILE_HEADER = 0x14;
+    const sizeof_IMAGE_IMPORT_DESCRIPTOR = 0x14;
 
     public function __construct($name)
     {
@@ -28,6 +30,7 @@ class PeParser
         $this->fp = null;
         $this->optMagic = null;
         $this->imageBase = null;
+        $this->numSecs = 0;
     }
 
     protected function getHeaderValue($name)
@@ -140,7 +143,7 @@ class PeParser
 
             $misc = $secs_ofs + ($n * self::sizeof_IMAGE_SECTION_HEADER) + self::NT_SHORT_NAME_LEN;
             $this->headers[sprintf('secs@%d.VirtualSize', $n)]     = [$misc, 4, 'V'];
-            $this->headers[sprintf('secs@%d.VirtualAddress', $n)]  = [$misc + 4, 4, 'V'];
+            $this->headers[sprintf('secs@%d.VirtualAddress', $n)]  = [$misc + 4, 4, 'V']; // RVA
             $this->headers[sprintf('secs@%d.SizeOfRawData', $n)]   = [$misc + 8, 4, 'V'];
             $this->headers[sprintf('secs@%d.PointerToRawData', $n)]  = [$misc + 0xc, 4, 'V'];
             $this->headers[sprintf('secs@%d.PointerToRelocations', $n)] = [$misc + 0x10, 4, 'V'];
@@ -162,8 +165,102 @@ class PeParser
         fclose($fp);
     }
 
+    public function findSection($rva)
+    {
+        for ($n = 0; $n < $this->numSecs; $n++) {
+            $s_sz = $this->getHeaderValue(sprintf('secs@%d.VirtualSize', $n));
+            $s_rva = $this->getHeaderValue(sprintf('secs@%d.VirtualAddress', $n));
+
+            $low = $s_rva;
+            $high = $low + $s_sz;
+
+            if ($rva >= $low && $rva < $high) {
+                $raw = $this->getHeaderValue(sprintf('secs@%d.PointerToRawData', $n));
+                return (object)['n' => $n, 'ofs' => $rva - $s_rva, 'sz' => $s_sz, 'raw' => $raw];
+            }
+        }
+    }
+
+    public function findString($rva)
+    {
+        $s = $this->findSection($rva);
+        if ($s) {
+            $raw = $s->raw + $s->ofs;
+
+            fseek($this->fp, $raw, SEEK_SET);
+            $data = fread($this->fp, min($s->sz - $s->ofs, 256));
+
+            $len = strpos($data, 0);
+
+            return (object)['raw' => $raw, 'len' => $len];
+        }
+        return null;
+    }
+
     public function parseImports()
     {
+        $va = $this->getHeaderValue('opt.DataDirectory@IMPORT.VirtualAddress');
+        $sz = $this->getHeaderValue('opt.DataDirectory@IMPORT.Size');
+
+        $s = $this->findSection($va);
+        if (is_null($s)) return;
+
+        $imp_ofs = $s->raw + $s->ofs;
+
+        for($n = 0;;$n++, $imp_ofs += self::sizeof_IMAGE_IMPORT_DESCRIPTOR) {
+            $this->headers[sprintf('import@%d.LookupTableRVA', $n)] = [$imp_ofs, 4, 'V'];
+            $this->headers[sprintf('import@%d.TimeStamp', $n)]      = [$imp_ofs +4, 4, 'V'];
+            $this->headers[sprintf('import@%d.ForwarderChain', $n)] = [$imp_ofs +8, 4, 'V'];
+            $this->headers[sprintf('import@%d.NameRVA', $n)]        = [$imp_ofs +0xc, 4, 'V'];
+            $this->headers[sprintf('import@%d.AddressRVA', $n)]     = [$imp_ofs +0x10, 4, 'V'];
+
+            $lookup_rva = $this->getHeaderValue(sprintf('import@%d.LookupTableRVA', $n));
+            if (!$lookup_rva) break;
+
+            $name_rva = $this->getHeaderValue(sprintf('import@%d.NameRVA', $n));
+
+            $st = $this->findString($name_rva);
+            if ($st) {
+                $this->headers[sprintf('import@%d.Name', $n)] = [$st->raw, $st->len, 'a*'];
+            }
+
+            $s = $this->findSection($lookup_rva);
+            if (is_null($s)) continue;
+
+            $sym_ofs = $s->raw + $s->ofs;
+
+            $iat_rva = $this->getHeaderValue(sprintf('import@%d.AddressRVA', $n));
+            $s = $this->findSection($iat_rva);
+            if (is_null($s)) continue;
+
+            $iat_ofs = $s->raw + $s->ofs;
+
+            for ($y = 0;;$y++, $sym_ofs += 4, $iat_ofs += 4) {
+                $k = sprintf('import@%d.sym@%d.NameRVA', $n, $y);
+                $this->headers[$k] = [$sym_ofs, 4, 'V'];
+
+                $val32 = $this->getHeaderValue($k);
+
+                $k = sprintf('import@%d.sym@%d.AddressVA', $n, $y);
+                $this->headers[$k] = [$iat_ofs, 4, 'V'];
+
+                if (!$val32) break;
+
+                $ord = $val32 >> 31;
+                if ($ord == 0) {
+                    $st = $this->findString($val32 + 2);
+                    if ($st) {
+                        $k = sprintf('import@%d.sym@%d.Hint', $n, $y);
+                        $this->headers[$k] = [$st->raw - 2, 2, 'v'];
+                        $k = sprintf('import@%d.sym@%d.Name', $n, $y);
+                        $this->headers[$k] = [$st->raw, $st->len, 'a*'];
+                    }
+                } else {
+                    $k = sprintf('import@%d.sym@%d.Ordinal', $n, $y);
+                    $this->headers[$k] = [$sym_ofs, 2, 'v'];
+                }
+            }
+        }
     }
 
     public static function main($argv)
