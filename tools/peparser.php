@@ -22,6 +22,8 @@ class PeParser
     const sizeof_IMAGE_SECTION_HEADER = 0x28;
     const sizeof_IMAGE_FILE_HEADER = 0x14;
     const sizeof_IMAGE_IMPORT_DESCRIPTOR = 0x14;
+    const sizeof_IMAGE_RESOURCE_DIRECTORY = 0x10;
+    const sizeof_IMAGE_EXPORT_DIRECTORY = 0x28;
 
     public function __construct($name)
     {
@@ -39,6 +41,8 @@ class PeParser
 
         fseek($this->fp, $header[0], SEEK_SET);
         $data = fread($this->fp, $header[1]);
+        if ($header[2] == 'h*') return '<BINARY>';
+        if ($header[2] == 'x*') return iconv('UTF-16LE', 'UTF-8', $data);
         $s = unpack($header[2], $data);
         return $s[1];
     }
@@ -154,6 +158,7 @@ class PeParser
         }
 
         $this->parseImports();
+        $this->parseResources();
 
         // DUMP
 
@@ -209,7 +214,7 @@ class PeParser
 
         for($n = 0;;$n++, $imp_ofs += self::sizeof_IMAGE_IMPORT_DESCRIPTOR) {
             $this->headers[sprintf('import@%d.LookupTableRVA', $n)] = [$imp_ofs, 4, 'V'];
-            $this->headers[sprintf('import@%d.TimeStamp', $n)]      = [$imp_ofs +4, 4, 'V'];
+            $this->headers[sprintf('import@%d.TimeDateStamp', $n)]      = [$imp_ofs +4, 4, 'V'];
             $this->headers[sprintf('import@%d.ForwarderChain', $n)] = [$imp_ofs +8, 4, 'V'];
             $this->headers[sprintf('import@%d.NameRVA', $n)]        = [$imp_ofs +0xc, 4, 'V'];
             $this->headers[sprintf('import@%d.AddressRVA', $n)]     = [$imp_ofs +0x10, 4, 'V'];
@@ -261,6 +266,79 @@ class PeParser
                 }
             }
         }
+    }
+
+    protected function parseResourceTable(&$n, $raw, $ofs=0, $depth=0)
+    {
+        $res_ofs = $raw + $ofs;
+        $this->headers[sprintf('resource@%d.Characteristics', $n)] = [$res_ofs, 4, 'V'];
+        $this->headers[sprintf('resource@%d.TimeDateStamp', $n)]   = [$res_ofs +4, 4, 'V'];
+        $this->headers[sprintf('resource@%d.MajorVersion', $n)] = [$res_ofs +8, 2, 'v'];
+        $this->headers[sprintf('resource@%d.MinorVersion', $n)] = [$res_ofs +0xa, 2, 'v'];
+        $this->headers[sprintf('resource@%d.NumberOfNamedEntries', $n)] = [$res_ofs +0xc, 2, 'v'];
+        $this->headers[sprintf('resource@%d.NumberOfIdEntries', $n)] = [$res_ofs +0xe, 2, 'v'];
+
+        $name_ens = $this->getHeaderValue(sprintf('resource@%d.NumberOfNamedEntries', $n));
+        $id_ens = $this->getHeaderValue(sprintf('resource@%d.NumberOfIdEntries', $n));
+
+        if ($name_ens === 0 && $id_ens == 0) return true;
+
+        $res_ofs += self::sizeof_IMAGE_RESOURCE_DIRECTORY;
+
+        $_n = $n;
+        for ($y = 0; $y < ($name_ens + $id_ens); $y++, $res_ofs += 8) {
+            $this->headers[sprintf('resource@%d.entry@%d.ID', $_n, $y)]   = [$res_ofs, 4, 'V'];
+            $this->headers[sprintf('resource@%d.entry@%d.Offset', $_n, $y)] = [$res_ofs+4, 4, 'V'];
+
+            $st_ofs = $this->getHeaderValue(sprintf('resource@%d.entry@%d.ID', $_n, $y));
+            $is_st = $st_ofs >> 31;
+
+            if ($is_st) {
+                // assert if ($y < $name_ens) {
+                $name_ofs = $raw + ($st_ofs & 0x0fffffff);
+
+                $this->headers[sprintf('resource@%d.data@%d.NameLength', $_n, $y)]   = [$name_ofs, 2, 'v'];
+                $name_len = $this->getHeaderValue(sprintf('resource@%d.data@%d.NameLength', $_n, $y));
+
+                $this->headers[sprintf('resource@%d.data@%d.Name', $_n, $y)]   = [$name_ofs+2, $name_len*2, 'x*']; // UTF-16LE
+            }
+
+            $entry_ofs = $this->getHeaderValue(sprintf('resource@%d.entry@%d.Offset', $_n, $y));
+
+            $is_dir = $entry_ofs >> 31;
+            if ($is_dir) {
+                $n++;
+                $this->parseResourceTable($n, $raw, $entry_ofs & 0x0ffffff, $depth+1);
+            } else {
+                $data_ofs = $raw + $entry_ofs;
+                $this->headers[sprintf('resource@%d.data@%d.OffsetToData', $_n, $y)]   = [$data_ofs, 4, 'V']; // RVA
+                $this->headers[sprintf('resource@%d.data@%d.Size', $_n, $y)] = [$data_ofs+4, 4, 'V'];
+                $this->headers[sprintf('resource@%d.data@%d.CodePage', $_n, $y)] = [$data_ofs+8, 4, 'V'];
+                $this->headers[sprintf('resource@%d.data@%d.Reserved', $_n, $y)] = [$data_ofs+0xc, 4, 'V'];
+
+                $dat_sz = $this->getHeaderValue(sprintf('resource@%d.data@%d.Size', $_n, $y));
+                $dat_rva = $this->getHeaderValue(sprintf('resource@%d.data@%d.OffsetToData', $_n, $y));
+
+                $s = $this->findSection($dat_rva);
+                if (is_null($s)) continue;
+
+                $this->headers[sprintf('resource@%d.data@%d.Data', $_n, $y)] = [$s->raw + $s->ofs, $dat_sz, 'h*'];
+            }
+        }
+    }
+
+    public function parseResources()
+    {
+        $va = $this->getHeaderValue('opt.DataDirectory@RESOURCE.VirtualAddress');
+        $sz = $this->getHeaderValue('opt.DataDirectory@RESOURCE.Size');
+
+        $s = $this->findSection($va);
+        if (is_null($s)) return;
+
+        $raw_ofs = $s->raw + $s->ofs;
+        $n = 0;
+
+        $this->parseResourceTable($n, $raw_ofs);
     }
 
     public static function main($argv)
