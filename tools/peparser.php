@@ -163,6 +163,7 @@ class PeParser
         }
 
         $this->parseImports();
+        $this->parseExports();
         $this->parseResources();
 
         // DUMP
@@ -268,6 +269,66 @@ class PeParser
                 } else {
                     $k = sprintf('import@%d.sym@%d.Ordinal', $n, $y);
                     $this->headers[$k] = [$sym_ofs, 2, 'v'];
+                }
+            }
+        }
+    }
+
+    public function parseExports()
+    {
+        $va = $this->getHeaderValue('opt.DataDirectory@EXPORT.VirtualAddress');
+        $sz = $this->getHeaderValue('opt.DataDirectory@EXPORT.Size');
+
+        $s = $this->findSection($va);
+        if (is_null($s)) return;
+
+        $exp_ofs = $s->raw + $s->ofs;
+
+        $this->headers['export.Characteristics']   = [$exp_ofs, 4, 'V'];
+        $this->headers['export.TimeDateStamp'] = [$exp_ofs + 4, 4, 'V'];
+        $this->headers['export.MajorVersion']  = [$exp_ofs + 8, 2, 'v'];
+        $this->headers['export.MinorVersion']  = [$exp_ofs + 0xa, 2, 'v'];
+        $this->headers['export.NameRVA']       = [$exp_ofs + 0xc, 4, 'V'];
+        $this->headers['export.OrdinalBase']           = [$exp_ofs + 0x10, 4, 'V'];
+        $this->headers['export.NumberOfFunctions']     = [$exp_ofs + 0x14, 4, 'V'];
+        $this->headers['export.NumberOfNames']         = [$exp_ofs + 0x18, 4, 'V'];
+        $this->headers['export.AddressOfFunctions']    = [$exp_ofs + 0x1c, 4, 'V'];
+        $this->headers['export.AddressOfNames']         = [$exp_ofs + 0x20, 4, 'V'];
+        $this->headers['export.AddressOfNameOrdinals'] = [$exp_ofs + 0x24, 4, 'V'];
+
+        $rva = $this->getHeaderValue('export.NameRVA');
+        $st = $this->findString($rva);
+        if ($st) {
+            $this->headers['export.Name'] = [$st->raw, $st->len, 'a*'];
+        }
+        $names_num = $this->getHeaderValue('export.NumberOfNames');
+
+        $eats_rva   = $this->getHeaderValue('export.AddressOfFunctions');
+        $names_rva = $this->getHeaderValue('export.AddressOfNames');
+        $ords_rva   = $this->getHeaderValue('export.AddressOfNameOrdinals');
+
+        for($n = 0; $n < $names_num; $n++, $names_rva += 4, $ords_rva += 2) {
+            $s = $this->findSection($names_rva);
+            if ($s) {
+                $this->headers[sprintf('export.sym@%d.NameRVA', $n)] = [$s->raw + $s->ofs, 4, 'V'];
+
+                $name_rva = $this->getHeaderValue(sprintf('export.sym@%d.NameRVA', $n));
+
+                $st = $this->findString($name_rva);
+                if($st) {
+                    $this->headers[sprintf('export.sym@%d.Name', $n)] = [$st->raw, $st->len, 'a*'];
+                }
+            }
+
+            $s = $this->findSection($ords_rva);
+            if ($s) {
+                $this->headers[sprintf('export.sym@%d.NameOrdinal', $n)] = [$s->raw + $s->ofs, 2, 'v'];
+
+                $ord = $this->getHeaderValue(sprintf('export.sym@%d.NameOrdinal', $n));
+
+                $s = $this->findSection($eats_rva + ($ord * 4));
+                if ($s) {
+                    $this->headers[sprintf('export.sym@%d.SymbolRVA', $n)] = [$s->raw + $s->ofs, 4, 'V'];
                 }
             }
         }
