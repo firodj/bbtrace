@@ -61,12 +61,8 @@ class TraceLog
         fclose($fp);
     }
 
-    protected function saveInfo($json)
+    protected function saveInfo($o)
     {
-        $json = trim($json, "\r\n, ");
-        $o = json_decode($json, true);
-        if (empty($o)) return;
-
         if (isset($o['module_start'])) {
             $this->modules[$o['module_start']] = $o;
         } elseif (isset($o['block_entry'])) {
@@ -87,9 +83,8 @@ class TraceLog
         }
     }
 
-    public function parseInfo()
+    public static function parseJson($fpath, Closure $save_cb)
     {
-        $fpath = sprintf("%s.info", $this->name);
         echo "Open: $fpath\n";
 
         $fp = fopen($fpath, 'r');
@@ -104,7 +99,12 @@ class TraceLog
                 $s .= $data;
                 if (preg_match('/\},?$/', $data)) {
                     $STATE_OBJECT = false;
-                    $this->saveInfo($s);
+
+                    $s = trim($s, "\r\n, ");
+                    $o = json_decode($s, true);
+                    if (!empty($o)) {
+                        $save_cb($o);
+                    }
                 }
             } elseif ($STATE_ARRAY) {
                 if (preg_match('/^\{/', $data)) {
@@ -113,7 +113,12 @@ class TraceLog
                 }
                 if ($STATE_OBJECT && preg_match('/\},?$/', $data)) {
                     $STATE_OBJECT = false;
-                    $this->saveInfo($s);
+
+                    $s = trim($s, "\r\n, ");
+                    $o = json_decode($s, true);
+                    if (!empty($o)) {
+                        $save_cb($o);
+                    }
                 }
                 if (preg_match('/\],?$/', $data)) {
                     $STATE_ARRAY = false;
@@ -127,6 +132,15 @@ class TraceLog
                 }
             }
         }
+
+    }
+
+    public function parseInfo()
+    {
+        $fpath = sprintf("%s.info", $this->name);
+        self::parseJson($fpath, function($o) {
+            $this->saveInfo($o);
+        });
 
         printf("Blocks: %d\nSymbols: %d\n", count($this->blocks), count($this->symbols));
         printf("Modules: %d\nImports: %d\n", count($this->modules), count($this->imports));
