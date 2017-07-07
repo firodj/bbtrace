@@ -39,9 +39,10 @@ class PeParser
     {
         $header = $this->headers[$name];
 
+        if ($header[2] == 'h*') return '<BINARY>';
+
         fseek($this->fp, $header[0], SEEK_SET);
         $data = fread($this->fp, $header[1]);
-        if ($header[2] == 'h*') return '<BINARY>';
         if ($header[2] == 'x*') return iconv('UTF-16LE', 'UTF-8', $data);
         $s = unpack($header[2], $data);
         return $s[1];
@@ -155,6 +156,10 @@ class PeParser
             $this->headers[sprintf('secs@%d.NumberOfRelocations', $n)] = [$misc + 0x18, 2, 'v'];
             $this->headers[sprintf('secs@%d.NumberOfLinenumbers', $n)] = [$misc + 0x1a, 2, 'v'];
             $this->headers[sprintf('secs@%d.Characteristics', $n)] = [$misc + 0x1c, 4, 'V'];
+
+            $s_sz = $this->getHeaderValue(sprintf('secs@%d.VirtualSize', $n));
+            $s_raw = $this->getHeaderValue(sprintf('secs@%d.PointerToRawData', $n));
+            $this->headers[sprintf('secs@%d.Data', $n)]  = [$s_raw, $s_sz, 'h*'];
         }
 
         $this->parseImports();
@@ -279,66 +284,66 @@ class PeParser
         $raw = $s->raw + $s->ofs;
 
         $dirs=[ [0, [] ] ];
-        for($n=0; $d = array_shift($dirs); $n++) {
+        while($d = array_shift($dirs)) {
             $ofs = $d[0];
             $parents = $d[1];
 
             $p = '';
             if (count($parents)) {
-                $p = implode('', array_map(function($x) { return sprintf('resource@%d.', $x); }, $parents));
+                $p = implode('', array_map(function($x) { return sprintf('.entry@%d', $x); }, $parents));
             }
 
             $res_ofs = $raw + $ofs;
-            $this->headers[sprintf('%sresource@%d.Characteristics', $p, $n)] = [$res_ofs, 4, 'V'];
-            $this->headers[sprintf('%sresource@%d.TimeDateStamp', $p, $n)]   = [$res_ofs +4, 4, 'V'];
-            $this->headers[sprintf('%sresource@%d.MajorVersion', $p, $n)] = [$res_ofs +8, 2, 'v'];
-            $this->headers[sprintf('%sresource@%d.MinorVersion', $p, $n)] = [$res_ofs +0xa, 2, 'v'];
-            $this->headers[sprintf('%sresource@%d.NumberOfNamedEntries', $p, $n)] = [$res_ofs +0xc, 2, 'v'];
-            $this->headers[sprintf('%sresource@%d.NumberOfIdEntries', $p, $n)] = [$res_ofs +0xe, 2, 'v'];
+            $this->headers[sprintf('resource%s.Characteristics', $p)] = [$res_ofs, 4, 'V'];
+            $this->headers[sprintf('resource%s.TimeDateStamp', $p)]   = [$res_ofs +4, 4, 'V'];
+            $this->headers[sprintf('resource%s.MajorVersion', $p)] = [$res_ofs +8, 2, 'v'];
+            $this->headers[sprintf('resource%s.MinorVersion', $p)] = [$res_ofs +0xa, 2, 'v'];
+            $this->headers[sprintf('resource%s.NumberOfNamedEntries', $p)] = [$res_ofs +0xc, 2, 'v'];
+            $this->headers[sprintf('resource%s.NumberOfIdEntries', $p)] = [$res_ofs +0xe, 2, 'v'];
 
-            $name_ens = $this->getHeaderValue(sprintf('%sresource@%d.NumberOfNamedEntries', $p, $n));
-            $id_ens = $this->getHeaderValue(sprintf('%sresource@%d.NumberOfIdEntries', $p, $n));
+            $name_ens = $this->getHeaderValue(sprintf('resource%s.NumberOfNamedEntries', $p));
+            $id_ens = $this->getHeaderValue(sprintf('resource%s.NumberOfIdEntries', $p));
 
             if ($name_ens === 0 && $id_ens == 0) return true;
 
             $res_ofs += self::sizeof_IMAGE_RESOURCE_DIRECTORY;
 
             for ($y = 0; $y < ($name_ens + $id_ens); $y++, $res_ofs += 8) {
-                $this->headers[sprintf('%sresource@%d.entry@%d.ID', $p, $n, $y)]   = [$res_ofs, 4, 'V'];
-                $this->headers[sprintf('%sresource@%d.entry@%d.Offset', $p, $n, $y)] = [$res_ofs+4, 4, 'V'];
+                $this->headers[sprintf('resource%s.entry@%d.ID', $p, $y)]   = [$res_ofs, 4, 'V'];
+                $this->headers[sprintf('resource%s.entry@%d.Offset', $p, $y)] = [$res_ofs+4, 4, 'V'];
 
-                $st_ofs = $this->getHeaderValue(sprintf('%sresource@%d.entry@%d.ID', $p, $n, $y));
+                $st_ofs = $this->getHeaderValue(sprintf('resource%s.entry@%d.ID', $p, $y));
                 $is_st = $st_ofs >> 31;
 
                 if ($is_st) {
                     // assert if ($y < $name_ens) {
                     $name_ofs = $raw + ($st_ofs & 0x0fffffff);
 
-                    $this->headers[sprintf('%sresource@%d.data@%d.NameLength', $p, $n, $y)]   = [$name_ofs, 2, 'v'];
-                    $name_len = $this->getHeaderValue(sprintf('%sresource@%d.data@%d.NameLength', $p, $n, $y));
+                    $this->headers[sprintf('resource%s.entry@%d.NameLength', $p, $y)]   = [$name_ofs, 2, 'v'];
+                    $name_len = $this->getHeaderValue(sprintf('resource%s.entry@%d.NameLength', $p, $y));
 
-                    $this->headers[sprintf('%sresource@%d.data@%d.Name', $p, $n, $y)]   = [$name_ofs+2, $name_len*2, 'x*']; // UTF-16LE
+                    $this->headers[sprintf('resource%s.entry@%d.Name', $p, $y)]   = [$name_ofs+2, $name_len*2, 'x*']; // UTF-16LE
                 }
 
-                $entry_ofs = $this->getHeaderValue(sprintf('%sresource@%d.entry@%d.Offset', $p, $n, $y));
+                $entry_ofs = $this->getHeaderValue(sprintf('resource%s.entry@%d.Offset', $p, $y));
 
                 $is_dir = $entry_ofs >> 31;
                 if ($is_dir) {
-                    $dirs[] = [ $entry_ofs & 0x0ffffff, array_merge($parents, [$n]) ];
+                    $dirs[] = [ $entry_ofs & 0x0ffffff, array_merge($parents, [$y]) ];
                 } else {
                     $data_ofs = $raw + $entry_ofs;
-                    $this->headers[sprintf('%sresource@%d.data@%d.OffsetToData', $p, $n, $y)]   = [$data_ofs, 4, 'V']; // RVA
-                    $this->headers[sprintf('%sresource@%d.data@%d.Size', $p, $n, $y)] = [$data_ofs+4, 4, 'V'];
-                    $this->headers[sprintf('%sresource@%d.data@%d.CodePage', $p, $n, $y)] = [$data_ofs+8, 4, 'V'];
-                    $this->headers[sprintf('%sresource@%d.data@%d.Reserved', $p, $n, $y)] = [$data_ofs+0xc, 4, 'V'];
+                    $this->headers[sprintf('resource%s.entry@%d.OffsetToData', $p, $y)]   = [$data_ofs, 4, 'V']; // RVA
+                    $this->headers[sprintf('resource%s.entry@%d.Size', $p, $y)] = [$data_ofs+4, 4, 'V'];
+                    $this->headers[sprintf('resource%s.entry@%d.CodePage', $p, $y)] = [$data_ofs+8, 4, 'V'];
+                    $this->headers[sprintf('resource%s.entry@%d.Reserved', $p, $y)] = [$data_ofs+0xc, 4, 'V'];
 
-                    $dat_sz = $this->getHeaderValue(sprintf('%sresource@%d.data@%d.Size', $p, $n, $y));
-                    $dat_rva = $this->getHeaderValue(sprintf('%sresource@%d.data@%d.OffsetToData', $p, $n, $y));
+                    $dat_sz = $this->getHeaderValue(sprintf('resource%s.entry@%d.Size', $p, $y));
+                    $dat_rva = $this->getHeaderValue(sprintf('resource%s.entry@%d.OffsetToData', $p, $y));
 
                     $s = $this->findSection($dat_rva);
                     if (is_null($s)) continue;
 
-                    $this->headers[sprintf('%sresource@%d.data@%d.Data', $p, $n, $y)] = [$s->raw + $s->ofs, $dat_sz, 'h*'];
+                    $this->headers[sprintf('resource%s.entry@%d.Data', $p, $y)] = [$s->raw + $s->ofs, $dat_sz, 'h*'];
                 }
             }
         }
