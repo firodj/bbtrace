@@ -11,6 +11,7 @@ class TraceLog
     private $modules;
     private $imports;
     private $exceptions;
+    private $functions;
 
     public function __construct($name)
     {
@@ -77,6 +78,9 @@ class TraceLog
         elseif (isset($o['import_module_name'])) {
             $this->imports[$o['symbol_name']] = $o;
         }
+        elseif (isset($o['function_entry'])) {
+            $this->functions[$o['function_entry']] = $o;
+        }
         else {
             echo "Bad:\n";
             print_r($o);
@@ -94,6 +98,7 @@ class TraceLog
 
         while (!feof($fp)) {
             $data = fgets($fp);
+            $data = preg_replace('/\r\n/', '', $data);
 
             if ($STATE_OBJECT) {
                 $s .= $data;
@@ -147,6 +152,15 @@ class TraceLog
         printf("Exceptions: %d\n", count($this->exceptions));
     }
 
+    public function parseDumpFunc()
+    {
+        $fpath = sprintf("%s.dumpfunc", $this->name);
+        self::parseJson($fpath, function($o) {
+            $this->saveInfo($o);
+        });
+        printf("Functions: %d\n", count($this->functions));
+    }
+
     public static function main($argv)
     {
         if (count($argv) <= 1) {
@@ -164,6 +178,7 @@ class TraceLog
 
         $trace_log = new TraceLog($fname);
         $trace_log->parseInfo();
+        $trace_log->parseDumpFunc();
         for ($i=1; $i<=$trace_log->getLogCount(); $i++) {
             $trace_log->parseLog($i);
         }
