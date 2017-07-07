@@ -186,4 +186,6 @@ class TraceLog
     }
 }
 
-$trace_log = TraceLog::main($argv);
+if (basename(__FILE__) == basename($_SERVER["SCRIPT_FILENAME"])) {
+    $trace_log = TraceLog::main($argv);
+}

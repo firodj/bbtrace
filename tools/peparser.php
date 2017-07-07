@@ -56,9 +56,24 @@ class PeParser
         return $this->optMagic == self::NT_OPTIONAL_64_MAGIC;
     }
 
+    public function open()
+    {
+        if (!isset($this->fp)) {
+            $this->fp = $fp = fopen($this->name, 'rb');
+        }
+    }
+
+    public function close()
+    {
+        if ($this->fp) {
+            fclose($this->fp);
+            unset($this->fp);
+        }
+    }
+
     public function parsePe()
     {
-        $this->fp = $fp = fopen($this->name, 'rb');
+        $this->open();
 
         $this->headers['dos.e_magic']    = [0, 2, 'a2'];
         $this->headers['dos.e_cblp']     = [2, 2, 'v'];
@@ -165,15 +180,16 @@ class PeParser
         $this->parseImports();
         $this->parseExports();
         $this->parseResources();
+    }
 
-        // DUMP
+    public function dump()
+    {
+        $this->open();
 
         foreach($this->headers as $name=>$header) {
             $value = $this->getHeaderValue($name);
             printf("0x%04x %s %s\n", $header[0], $name, is_string($value) ? $value : '0x'.dechex($value));
         }
-
-        fclose($fp);
     }
 
     public function findSection($rva)
@@ -426,9 +442,14 @@ class PeParser
         }
 
         $pe_parser = new PeParser($fname);
+
         $pe_parser->parsePe();
+        $pe_parser->dump();
+
         return $pe_parser;
     }
 }
 
-$pe_parser = PeParser::main($argv);
+if (basename(__FILE__) == basename($_SERVER["SCRIPT_FILENAME"])) {
+    $pe_parser = PeParser::main($argv);
+}
