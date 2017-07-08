@@ -9,12 +9,12 @@ class TraceLog implements Serializable
     private $name;
     private $log_count;
 
-    private $blocks;
-    private $symbols;
-    private $modules;
-    private $imports;
-    private $exceptions;
-    private $functions;
+    public $blocks;
+    public $symbols;
+    public $modules;
+    public $imports;
+    public $exceptions;
+    public $functions;
 
     public function __construct($fname)
     {
@@ -60,12 +60,16 @@ class TraceLog implements Serializable
         return $this->log_count;
     }
 
-    public function parseLog($log_nbr)
+    /* callback return non zero to stop */
+    public function parseLog($log_nbr, $pkt_start, $callback)
     {
         $fpath = sprintf("%s.%04d", $this->name, $log_nbr);
         echo "Open: $fpath\n";
 
         $fp = fopen($fpath, 'rb');
+        $n = 0;
+        $ret = null;
+
         while (!feof($fp)) {
             $data = fread($fp, (4+8+4));
             if (!feof($fp)) {
@@ -73,42 +77,42 @@ class TraceLog implements Serializable
             } else break;
 
             if ($data['code'] == PKT_CODE_TRACE) {
-                $header = array_merge($data, unpack('Lsize', fread($fp, 4)));
-                print_r($header);
+                $n++;
 
-                $data = unpack('L*', fread($fp, $header['size']*4));
-                foreach($data as $block_id) {
-                    $block_id = sprintf("0x%08x", $block_id);
-                    if (isset($this->blocks[$block_id])) {
-                    } else if (isset($this->symbols[$block_id])) {
-                    } else {
-                        echo "Unknown:\n";
-                        print_r($block_id);
-                    }
+                $header = array_merge($data, unpack('Lsize', fread($fp, 4)));
+                $header['pkt_no'] = $n;
+
+                if ($pkt_start && $n < $pkt_start) {
+                    fseek($fp, $header['size']*4, SEEK_CUR);
+                } else {
+                    $raw_data = fread($fp, $header['size']*4);
+                    $ret = $callback($header, $raw_data);
+                    if ($ret) break;
                 }
             }
         }
         fclose($fp);
+        return $ret;
     }
 
     protected function saveInfo($o)
     {
         if (isset($o['module_start'])) {
-            $this->modules[$o['module_start']] = $o;
+            $this->modules[ hexdec($o['module_start']) ] = $o;
         } elseif (isset($o['block_entry'])) {
-            $this->blocks[$o['block_entry']] = $o;
+            $this->blocks[ hexdec($o['block_entry']) ] = $o;
         }
         elseif (isset($o['symbol_entry'])) {
-            $this->symbols[$o['symbol_entry']] = $o;
+            $this->symbols[ hexdec($o['symbol_entry']) ] = $o;
         }
         elseif (isset($o['exception_code'])) {
-            $this->exceptions[$o['exception_address']] = $o;
+            $this->exceptions[ hexdec($o['exception_address']) ] = $o;
         }
         elseif (isset($o['import_module_name'])) {
             $this->imports[$o['symbol_name']] = $o;
         }
         elseif (isset($o['function_entry'])) {
-            $this->functions[$o['function_entry']] = $o;
+            $this->functions[ hexdec($o['function_entry']) ] = $o;
         }
         else {
             echo "Bad:\n";
@@ -198,6 +202,7 @@ class TraceLog implements Serializable
     public function unserialize($serialized)
     {
         $this->data = unserialize($serialized);
+
         $this->blocks = &$this->data->blocks;
         $this->symbols = &$this->data->symbols;
         $this->modules = &$this->data->modules;
@@ -226,8 +231,25 @@ if (basename(__FILE__) == basename($_SERVER["SCRIPT_FILENAME"])) {
     $trace_log = TraceLog::main($argv);
 
     $trace_log2 = unserialize( serialize($trace_log) );
+    unset($trace_log);
 
     for ($i=1; $i<=$trace_log2->getLogCount(); $i++) {
-        $trace_log2->parseLog($i);
+        $trace_log2->parseLog($i, 0, function($header, $raw_data) use ($trace_log2) {
+            var_dump($header);
+
+            $data = unpack('V*', $raw_data);
+            foreach($data as $block_id) {
+                if (isset($trace_log2->functions[$block_id])) {
+                    echo $trace_log2->functions[$block_id]['function_name'].PHP_EOL;
+                }
+                if (isset($trace_log2->blocks[$block_id])) {
+
+                } else if (isset($trace_log2->symbols[$block_id])) {
+
+                } else {
+                    echo sprintf("Unknown: 0x%08x\n", $block_id);
+                }
+            }
+        });
     }
 }
