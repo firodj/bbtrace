@@ -64,7 +64,7 @@ class TraceLog implements Serializable
     public function parseLog($log_nbr, $pkt_start, $callback)
     {
         $fpath = sprintf("%s.%04d", $this->name, $log_nbr);
-        echo "Open: $fpath\n";
+        fprintf(STDERR, "Open: %s\n", $fpath);
 
         $fp = fopen($fpath, 'rb');
         $n = 0;
@@ -115,14 +115,13 @@ class TraceLog implements Serializable
             $this->functions[ hexdec($o['function_entry']) ] = $o;
         }
         else {
-            echo "Bad:\n";
-            print_r($o);
+            fprintf(STDERR, "Bad Info:%s\n", json_encode($o));
         }
     }
 
     public static function parseJson($fpath, Closure $save_cb)
     {
-        echo "Open: $fpath\n";
+        fprintf(STDERR, "Open: %s\n", $fpath);
 
         $fp = fopen($fpath, 'r');
         $STATE_ARRAY = false;
@@ -180,9 +179,9 @@ class TraceLog implements Serializable
             $this->saveInfo($o);
         });
 
-        printf("Blocks: %d\nSymbols: %d\n", count($this->blocks), count($this->symbols));
-        printf("Modules: %d\nImports: %d\n", count($this->modules), count($this->imports));
-        printf("Exceptions: %d\n", count($this->exceptions));
+        fprintf(STDERR, "Blocks: %d\nSymbols: %d\n", count($this->blocks), count($this->symbols));
+        fprintf(STDERR, "Modules: %d\nImports: %d\n", count($this->modules), count($this->imports));
+        fprintf(STDERR, "Exceptions: %d\n", count($this->exceptions));
     }
 
     public function parseFunc()
@@ -191,7 +190,7 @@ class TraceLog implements Serializable
         self::parseJson($fpath, function($o) {
             $this->saveInfo($o);
         });
-        printf("Functions: %d\n", count($this->functions));
+        fprintf(STDERR, "Functions: %d\n", count($this->functions));
     }
 
     public function serialize(): string
@@ -215,7 +214,7 @@ class TraceLog implements Serializable
     public static function main($argv)
     {
         if (count($argv) <= 1) {
-            echo "Syntax: $argv[0] <file.log.info>\n";
+            fprintf(STDERR, "Syntax: %s <file.log.info>\n", $argv[0]);
             return false;
         }
 
@@ -235,17 +234,20 @@ if (basename(__FILE__) == basename($_SERVER["SCRIPT_FILENAME"])) {
 
     for ($i=1; $i<=$trace_log2->getLogCount(); $i++) {
         $trace_log2->parseLog($i, 0, function($header, $raw_data) use ($trace_log2) {
-            var_dump($header);
+            fprintf(STDERR, "%d.", $header['pkt_no']);
 
             $data = unpack('V*', $raw_data);
             foreach($data as $block_id) {
                 if (isset($trace_log2->functions[$block_id])) {
-                    echo $trace_log2->functions[$block_id]['function_name'].PHP_EOL;
+                    $func = $trace_log2->functions[$block_id];
+                    echo $func['function_name'].PHP_EOL;
                 }
                 if (isset($trace_log2->blocks[$block_id])) {
-
+                    $block = $trace_log2->blocks[$block_id];
+                    echo "\t".dechex($block_id).PHP_EOL;
                 } else if (isset($trace_log2->symbols[$block_id])) {
-
+                    $sym = $trace_log2->symbols[$block_id];
+                    echo "\t\t".dechex($block_id)." ".$sym['symbol_name'].PHP_EOL;
                 } else {
                     echo sprintf("Unknown: 0x%08x\n", $block_id);
                 }
