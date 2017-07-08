@@ -2,10 +2,13 @@
 
 define('PKT_CODE_TRACE', 1);
 
-class TraceLog
+class TraceLog implements Serializable
 {
+    private $data;
+
     private $name;
     private $log_count;
+
     private $blocks;
     private $symbols;
     private $modules;
@@ -13,14 +16,40 @@ class TraceLog
     private $exceptions;
     private $functions;
 
-    public function __construct($name)
+    public function __construct($fname)
     {
-        $this->name = $name;
+        $fname = realpath($fname);
+
+        if (preg_match('/^(.+\.log)\.(info|[0-9]+|func)$/', $fname, $matches)) {
+            $fname = $matches[1];
+        } else {
+            throw new Exception("File name error: $fname");
+        }
+
+        $this->name = $fname;
+
+        $this->data = (object)[
+            'blocks' => [],
+            'symbols' => [],
+            'modules' => [],
+            'imports' => [],
+            'exceptions' => [],
+            'functions' => [],
+            'name' => $fname,
+        ];
+
+        $this->blocks = &$this->data->blocks;
+        $this->symbols = &$this->data->symbols;
+        $this->modules = &$this->data->modules;
+        $this->imports = &$this->data->imports;
+        $this->exceptions = &$this->data->exceptions;
+        $this->functions = &$this->data->functions;
+        $this->name = &$this->data->name;
     }
 
     public function getLogCount()
     {
-        if (is_null($this->log_count)) {
+        if (!isset($this->log_count)) {
             $log_count = 0;
             for (;;$log_count++) {
                 $fpath = sprintf("%s.%04d", $this->name, $log_count+1);
@@ -152,13 +181,30 @@ class TraceLog
         printf("Exceptions: %d\n", count($this->exceptions));
     }
 
-    public function parseDumpFunc()
+    public function parseFunc()
     {
-        $fpath = sprintf("%s.dumpfunc", $this->name);
+        $fpath = sprintf("%s.func", $this->name);
         self::parseJson($fpath, function($o) {
             $this->saveInfo($o);
         });
         printf("Functions: %d\n", count($this->functions));
+    }
+
+    public function serialize(): string
+    {
+        return serialize($this->data);
+    }
+
+    public function unserialize($serialized)
+    {
+        $this->data = unserialize($serialized);
+        $this->blocks = &$this->data->blocks;
+        $this->symbols = &$this->data->symbols;
+        $this->modules = &$this->data->modules;
+        $this->imports = &$this->data->imports;
+        $this->exceptions = &$this->data->exceptions;
+        $this->functions = &$this->data->functions;
+        $this->name = &$this->data->name;
     }
 
     public static function main($argv)
@@ -168,24 +214,20 @@ class TraceLog
             return false;
         }
 
-        $fname = $argv[1];
-        if (preg_match('/^(.+\.log)\.info$/', $fname, $matches)) {
-            $fname = $matches[1];
-        } else {
-            echo "Error: file name not match <file.log.info>\n";
-            return false;
-        }
-
-        $trace_log = new TraceLog($fname);
+        $trace_log = new TraceLog($argv[1]);
         $trace_log->parseInfo();
-        $trace_log->parseDumpFunc();
-        for ($i=1; $i<=$trace_log->getLogCount(); $i++) {
-            $trace_log->parseLog($i);
-        }
+        $trace_log->parseFunc();
+
         return $trace_log;
     }
 }
 
 if (basename(__FILE__) == basename($_SERVER["SCRIPT_FILENAME"])) {
     $trace_log = TraceLog::main($argv);
+
+    $trace_log2 = unserialize( serialize($trace_log) );
+
+    for ($i=1; $i<=$trace_log2->getLogCount(); $i++) {
+        $trace_log2->parseLog($i);
+    }
 }

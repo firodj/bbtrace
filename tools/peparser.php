@@ -1,13 +1,15 @@
 <?php
 
-class PeParser
+class PeParser implements Serializable
 {
+    private $data;
     private $headers;
+
     private $fp;
     private $name;
+
     private $optMagic;
-    private $imageBase;
-    private $numSecs;
+    private $sections;
 
     const NUM_DIR_ENTRIES = 16;
     const DIR_NAMES = ['EXPORT', 'IMPORT', 'RESOURCE', 'EXCEPTION', 
@@ -27,12 +29,16 @@ class PeParser
 
     public function __construct($name)
     {
-        $this->name = $name;
-        $this->headers = [];
         $this->fp = null;
         $this->optMagic = null;
-        $this->imageBase = null;
-        $this->numSecs = 0;
+        $this->sections = [];
+        $this->data = (object) [
+            'headers' => [],
+            'name' => realpath($name)
+        ];
+
+        $this->headers = &$this->data->headers;
+        $this->name = &$this->data->name;
     }
 
     protected function getHeaderValue($name)
@@ -49,10 +55,16 @@ class PeParser
     }
 
     public function is32() {
+        if (!isset($this->optMagic)) {
+            $this->optMagic = $this->getHeaderValue('opt.Magic');
+        }
         return $this->optMagic == self::NT_OPTIONAL_32_MAGIC;
     }
 
     public function is64() {
+        if (!isset($this->optMagic)) {
+            $this->optMagic = $this->getHeaderValue('opt.Magic');
+        }
         return $this->optMagic == self::NT_OPTIONAL_64_MAGIC;
     }
 
@@ -111,7 +123,6 @@ class PeParser
         $opt_sz = $this->getHeaderValue('file.SizeOfOptionalHeader');
 
         $this->headers['opt.Magic']                 = [$opt_ofs, 2, 'v'];
-        $this->optMagic = $this->getHeaderValue('opt.Magic');
 
         $this->headers['opt.MajorLinkerVersion']    = [$opt_ofs +2, 1, 'C'];
         $this->headers['opt.MinorLinkerVersion']    = [$opt_ofs +3, 1, 'C'];
@@ -122,7 +133,6 @@ class PeParser
         $this->headers['opt.BaseOfCode']            = [$opt_ofs + 0x14, 4, 'V'];
         $this->headers['opt.BaseOfData']            = [$opt_ofs + 0x18, 4, 'V'];
         $this->headers['opt.ImageBase']             = [$opt_ofs + 0x1c, 4, 'V'];
-        $this->imageBase = $this->getHeaderValue('opt.ImageBase');
 
         $this->headers['opt.SectionAlignment']      = [$opt_ofs + 0x20, 4, 'V'];
         $this->headers['opt.FileAlignment']         = [$opt_ofs + 0x24, 4, 'V'];
@@ -157,8 +167,8 @@ class PeParser
 
         $secs_ofs = $opt_ofs + $opt_sz;
 
-        $this->numSecs = $this->getHeaderValue('file.NumberOfSections');
-        for ($n = 0; $n < $this->numSecs; $n++) {
+        $num_secs = $this->getHeaderValue('file.NumberOfSections');
+        for ($n = 0; $n < $num_secs; $n++) {
             $this->headers[sprintf('secs@%d.Name', $n)]  = [$secs_ofs + ($n * self::sizeof_IMAGE_SECTION_HEADER), self::NT_SHORT_NAME_LEN, 'a*'];
 
             $misc = $secs_ofs + ($n * self::sizeof_IMAGE_SECTION_HEADER) + self::NT_SHORT_NAME_LEN;
@@ -182,27 +192,29 @@ class PeParser
         $this->parseResources();
     }
 
-    public function dump()
-    {
-        $this->open();
-
-        foreach($this->headers as $name=>$header) {
-            $value = $this->getHeaderValue($name);
-            printf("0x%04x %s %s\n", $header[0], $name, is_string($value) ? $value : '0x'.dechex($value));
-        }
-    }
-
     public function findSection($rva)
     {
-        for ($n = 0; $n < $this->numSecs; $n++) {
-            $s_sz = $this->getHeaderValue(sprintf('secs@%d.VirtualSize', $n));
-            $s_rva = $this->getHeaderValue(sprintf('secs@%d.VirtualAddress', $n));
+        if (empty($this->sections)) {
+            $num_secs = $this->getHeaderValue('file.NumberOfSections');
+            for ($n = 0; $n < $num_secs; $n++) {
+                $this->sections[] = (object)[
+                    'size' => $this->getHeaderValue(sprintf('secs@%d.VirtualSize', $n)),
+                    'rva'  => $this->getHeaderValue(sprintf('secs@%d.VirtualAddress', $n)),
+                    'raw'  => $this->getHeaderValue(sprintf('secs@%d.PointerToRawData', $n)),
+                    'name' => $this->getHeaderValue(sprintf('secs@%d.Name', $n)),
+                ];
+            }
+        }
+
+        for ($n = 0; $n < count($this->sections); $n++) {
+            $s_sz = $this->sections[$n]->size;
+            $s_rva = $this->sections[$n]->rva;
 
             $low = $s_rva;
             $high = $low + $s_sz;
 
             if ($rva >= $low && $rva < $high) {
-                $raw = $this->getHeaderValue(sprintf('secs@%d.PointerToRawData', $n));
+                $raw = $this->sections[$n]->raw;
                 return (object)['n' => $n, 'ofs' => $rva - $s_rva, 'sz' => $s_sz, 'raw' => $raw];
             }
         }
@@ -426,6 +438,32 @@ class PeParser
         }
     }
 
+    public function serialize(): string
+    {
+        return serialize($this->data);
+    }
+
+    public function unserialize($serialized)
+    {
+        $this->data = unserialize($serialized);
+        $this->headers = &$this->data->headers;
+        $this->name = &$this->data->name;
+    }
+
+    public function __toString()
+    {
+        $this->open();
+
+        $output = '';
+
+        foreach($this->headers as $name=>$header) {
+            $value = $this->getHeaderValue($name);
+            $output .= sprintf("0x%04x %s %s\n", $header[0], $name, is_string($value) ? $value : '0x'.dechex($value));
+        }
+
+        return $output;
+    }
+
     public static function main($argv)
     {
         if (count($argv) <= 1) {
@@ -444,7 +482,6 @@ class PeParser
         $pe_parser = new PeParser($fname);
 
         $pe_parser->parsePe();
-        $pe_parser->dump();
 
         return $pe_parser;
     }
@@ -452,4 +489,8 @@ class PeParser
 
 if (basename(__FILE__) == basename($_SERVER["SCRIPT_FILENAME"])) {
     $pe_parser = PeParser::main($argv);
+
+    $pe_parser2 = unserialize( serialize($pe_parser) );
+
+    echo $pe_parser2;
 }
