@@ -13,19 +13,26 @@ IF "%2"=="" (
 SET LOCAL=%~dp0
 SET LOCAL=%LOCAL:~0,-1%
 
-REM Example: run -only_from_app -logdir %LOCAL%\logs
-IF [%1]==[drltrace] (
-  SET ARGS=-logdir %LOCAL%\logs -t drltrace %2 %3 %4 %5 %6 %7 %8 %9
-  GOTO run
-)
-IF [%1]==[tracedump] (
-  SET ARGS=-logdir %LOCAL%\logs -tracedump_binary %2 %3 %4 %5 %6 %7 %8 %9
-  GOTO run
+Set filename=%3
+
+if not exist "%filename%" (
+	(echo No application %filename%)
+	GOTO:eof
 )
 
-SET ARGS=-logdir %LOCAL%\logs -c %LOCAL%\build\RelWithDebInfo\%1.dll %2 %3 %4 %5 %6 %7 %8 %9
+For %%A in ("%filename%") do (
+    Set Folder=%%~dpA
+    Set Name=%%~nxA
+)
+
+SET ARGS=-c %LOCAL%\build\RelWithDebInfo\%1.dll -- %Name% %4 %5 %6 %7 %8 %9
 
 :run
 
-rem set DYNAMORIO_HOME=D:\LIB\dynamorio\build
+pushd %Folder%
+
+echo %cd%
+echo %DYNAMORIO_HOME%\bin32\drrun.exe -syntax_intel %ARGS%
+
 %DYNAMORIO_HOME%\bin32\drrun.exe -syntax_intel %ARGS%
+popd
