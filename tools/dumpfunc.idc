@@ -2,7 +2,7 @@
 
 static FuncDump(start)
 {
-    auto ea, end, str;
+    auto ea, end, str, mod, segea;
 
     ea = start;
 
@@ -12,7 +12,8 @@ static FuncDump(start)
         if( str != 0 )
         {
             end = GetFunctionAttr(ea, FUNCATTR_END);
-            Message("{\n\t\"function_entry\":\"0x%08x\",\n\t\"function_end\":\"0x%08x\",\n\t\"function_name\":\"%s\"\n},\n", ea, end, str);
+            segea = SegStart(ea);
+            Message("{\n\t\"function_entry\":\"0x%08x\",\n\t\"function_end\":\"0x%08x\",\n\t\"function_name\":\"%s\",\n\t\"module_start_ref\":\"0x%08x\"\n},\n", ea, end, str, segea);
         }
 
         ea = NextFunction(ea);
