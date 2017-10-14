@@ -17,7 +17,7 @@ if (test)
 	# enable_testing()
 
 	add_executable(test_app tests/test_app.cpp)
-  set_target_properties(test_app PROPERTIES COMPILE_FLAGS /EHa)
+	set_target_properties(test_app PROPERTIES COMPILE_FLAGS /EHa)
 
 	add_library(test_bbtrace SHARED tests/test_bbtrace.c)
 	target_link_libraries(test_bbtrace bbtrace_core)
@@ -35,3 +35,7 @@ configure_DynamoRIO_client(bbtrace)
 use_DynamoRIO_extension(bbtrace drmgr)
 use_DynamoRIO_extension(bbtrace drwrap)
 use_DynamoRIO_extension(bbtrace drcontainers)
+
+add_executable(bbtrace_flow clients/bbtrace_flow.cpp)
+set_target_properties(bbtrace_flow PROPERTIES COMPILE_FLAGS /EHsc)
+target_link_libraries(bbtrace_flow bbtrace_core)
