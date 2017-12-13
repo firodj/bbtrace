@@ -1,16 +1,17 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <cstdint>
 #include <unordered_map>
-#include "inttypes.h"
+
 #include "bbtrace_core.h"
 
 typedef std::unordered_map<uint, app_pc> last_block_t;
-typedef std::unordered_map<app_pc, bool> app_pc_list_t;
+typedef std::unordered_map<app_pc, uint64_t> app_pc_list_t;
 typedef std::unordered_map<app_pc, app_pc_list_t> app_pc_map_t;
 
 int main(int argc, const char* argv[])
-{
+{	
     if (argc <= 1) {
         printf("Syntax: %s <tarce-log.0001>\n", argv[0]);
         return 0;
@@ -59,12 +60,12 @@ int main(int argc, const char* argv[])
                 } else {
                     const app_pc last_pc = last_block[pkt_trace.header.thread];
                     if (pc_to_pc.find( current_pc ) == pc_to_pc.end()) {
-                        pc_to_pc[current_pc][last_pc] = false;
+                        pc_to_pc[current_pc][last_pc] = 0;
                     } else {
                         if (pc_to_pc[current_pc].find(last_pc) == pc_to_pc[current_pc].end()) {
-                            pc_to_pc[current_pc][last_pc] = false;
+                            pc_to_pc[current_pc][last_pc] = 0;
                         } else {
-                            pc_to_pc[current_pc][last_pc] = true;
+                            pc_to_pc[current_pc][last_pc]++;
                         }
                     }
                 }
@@ -87,7 +88,7 @@ int main(int argc, const char* argv[])
     printf("Write %s...\n", file_name);
     for (app_pc_map_t::const_iterator it1 = pc_to_pc.begin(); it1 != pc_to_pc.end(); ++it1) {
         for (app_pc_list_t::const_iterator it2 = it1->second.begin(); it2 != it1->second.end(); ++it2) {
-            fprintf(fp, "\"0x%08x\", \"0x%08x\", %d\n", (uint) it1->first, (uint) it2->first, it2->second);
+            fprintf(fp, "\"0x%08x\", \"0x%08x\", %llu\n", (uint) it1->first, (uint) it2->first, it2->second);
         }
     }
 
