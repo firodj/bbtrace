@@ -2,6 +2,7 @@ import os
 import idaapi
 import idautils
 import idc
+import traceback
 from bbtrace.InfoParser import InfoParser
 
 
@@ -30,6 +31,59 @@ ICON_DATA = "".join([
         "\xF1\xA4\x93\x0F\x00\x36\xAD\x3E\x4C\x6B\xC5\xC9\x5D\x77\x6A\x2F\xB4\x31\xA3\xC4\x40\x4F\x21\x0F\xD1\x4C\x3C\xE9\x2B\xE1\xF5\x0B\xD6\x90\xC8\x90\x4C\xE6\x35\xD0\xCC\x79\x5E\xFF",
         "\x2E\xF8\x0B\x2F\x3D\xE5\xC3\x97\x06\xCF\xCF\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82"])
 ACT_ICON = idaapi.load_custom_icon(data=ICON_DATA, format="png")
+
+
+
+def lex_citem_indexes(line):
+    """
+    Lex all ctree item indexes from a given line of text.
+    -----------------------------------------------------------------------
+    The HexRays decompiler output contains invisible text tokens that can
+    be used to attribute spans of text to the ctree items that produced them.
+    This function will simply scrape and return a list of all the these
+    tokens (COLOR_ADDR) which contain item indexes into the ctree.
+
+    https://github.com/gaasedelen/lighthouse/blob/006c46b4724f6f2cb7b36bc3ec6a45fbb49da6b9/plugin/lighthouse/util/ida.py#L131
+    """
+    i = 0
+    indexes = []
+    line_length = len(line)
+
+    # lex COLOR_ADDR tokens from the line of text
+    while i < line_length:
+
+        # does this character mark the start of a new COLOR_* token?
+        if line[i] == idaapi.COLOR_ON:
+
+            # yes, so move past the COLOR_ON byte
+            i += 1
+
+            # is this sequence for a COLOR_ADDR?
+            if ord(line[i]) == idaapi.COLOR_ADDR:
+
+                # yes, so move past the COLOR_ADDR byte
+                i += 1
+
+                #
+                # A COLOR_ADDR token is followed by either 8, or 16 characters
+                # (a hex encoded number) that represents an address/pointer.
+                # in this context, it is actually the index number of a citem
+                #
+
+                citem_index = int(line[i:i+idaapi.COLOR_ADDR_SIZE], 16)
+                i += idaapi.COLOR_ADDR_SIZE
+
+                # save the extracted citem index
+                indexes.append(citem_index)
+
+                # skip to the next iteration as i has moved
+                continue
+
+        # nothing we care about happened, keep lexing forward
+        i += 1
+
+    # return all the citem indexes extracted from this line of text
+    return indexes
 
 
 class IDACtxEntry(idaapi.action_handler_t):
@@ -96,6 +150,11 @@ class BBTrace(idaapi.plugin_t):
         if not result:
             RuntimeError("Failed action attach load_file")
 
+        if idaapi.init_hexrays_plugin():
+            idaapi.install_hexrays_callback(self.hexrays_event)
+        else:
+            print('hexrays is not available.')
+
         print("BBTrace initialized.")
         return idaapi.PLUGIN_KEEP
 
@@ -119,7 +178,71 @@ class BBTrace(idaapi.plugin_t):
         self.infoparser = InfoParser(os.path.join(path, infoname))
 
         self.infoparser.load()
-        self.infoparser.flow()
+
+        functions = {}
+        col = 0xccffcc
+
+        for ea, basic_block in self.infoparser.basic_blocks.iteritems():
+            while ea != BADADDR:
+                idc.set_color(ea, CIC_ITEM, col)
+                ea = idc.next_head(ea, basic_block['end'])
+
+            f = idaapi.get_func(ea)
+            if f is None:
+                continue
+            if f.start_ea not in functions:
+                functions[f.start_ea] = f
+                print("start_ea = 0x%x end_ea = 0x%x name = %s" % (f.start_ea, f.end_ea, idc.get_name(f.start_ea)))
+
+        #self.infoparser.flow()
+
+    def hexrays_event(self, event, *args):
+        try:
+            # if event == idaapi.hxe_maturity:
+            # cfunc, maturity = args
+            # if maturity == idaapi.CMAT_FINAL:
+            if event == idaapi.hxe_text_ready:
+                # more code-friendly, readable aliases
+                vdui = args[0]
+                cfunc = vdui.cfunc
+
+                self.paint_hexrays(cfunc)
+
+        except:
+            traceback.print_exc()
+
+        return 0
+
+    def paint_hexrays(self, cfunc):
+        sv = cfunc.get_pseudocode()
+
+        lines_painted = 0
+
+        for sline in sv:
+            indexes = lex_citem_indexes(sline.line)
+            for index in indexes:
+                try:
+                    item = cfunc.treeitems[index]
+                    ea = item.ea
+
+                # apparently this is a thing on IDA 6.95
+                except IndexError as e:
+                    continue
+
+                col = idc.get_color(ea, CIC_ITEM)
+                if col != BADADDR:
+                    sline.bgcolor = col
+                    lines_painted += 1
+
+        if not lines_painted:
+            return
+
+        col = 0xccffcc
+
+        for line_number in xrange(0, cfunc.hdrlines):
+            sv[line_number].bgcolor = col
+
+        idaapi.refresh_idaview_anyway()
 
 
 def PLUGIN_ENTRY():
