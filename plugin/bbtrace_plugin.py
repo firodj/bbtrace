@@ -1,7 +1,9 @@
 import os
-
 import idaapi
 import idautils
+import idc
+from bbtrace.InfoParser import InfoParser
+
 
 PLUGIN_VERSION = "0.0.1"
 AUTHORS        = "Fadhil Mandaga"
@@ -107,7 +109,18 @@ class BBTrace(idaapi.plugin_t):
         """
         Interactive loading of individual coverage files.
         """
-        print("Load file action!")
+
+        exename = idc.GetInputFile()
+        path = os.path.dirname(idc.GetInputFilePath())
+
+        infoname = "bbtrace.%s.log.info" % (exename,)
+        flowname = "bbtrace.%s.log.flow" % (exename,)
+
+        self.infoparser = InfoParser(os.path.join(path, infoname))
+
+        self.infoparser.load()
+        self.infoparser.flow()
+
 
 def PLUGIN_ENTRY():
     """

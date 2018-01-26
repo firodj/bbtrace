@@ -9,7 +9,6 @@ rmdir     "%APPDATA%\Hex-Rays\IDA Pro\plugins\bbtrace" /s /q
 
 REM - Copy over the new plugin bits
 xcopy /s/y "plugin\*" "%APPDATA%\Hex-Rays\IDA Pro\plugins\"
-del /F /Q "%APPDATA%\Hex-Rays\IDA Pro\plugins\.#bbtrace_plugin.py"
 
 REM - Launch a new IDA session
 start "" "C:\Program Files\IDA 7.0\ida.exe"
