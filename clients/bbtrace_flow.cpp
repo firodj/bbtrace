@@ -88,7 +88,7 @@ int main(int argc, const char* argv[])
     printf("Write %s...\n", file_name);
     for (app_pc_map_t::const_iterator it1 = pc_to_pc.begin(); it1 != pc_to_pc.end(); ++it1) {
         for (app_pc_list_t::const_iterator it2 = it1->second.begin(); it2 != it1->second.end(); ++it2) {
-            fprintf(fp, "\"0x%08x\", \"0x%08x\", %llu\n", (uint) it1->first, (uint) it2->first, it2->second);
+            fprintf(fp, "\"0x%08x\",\"0x%08x\",%llu\n", (uint) it1->first, (uint) it2->first, it2->second);
         }
     }
 

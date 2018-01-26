@@ -45,11 +45,11 @@ bbtrace_log_filename(uint count)
 const char *
 bbtrace_formatinfo_module(const module_data_t *mod)
 {
-	static char info[256];
+	static char info[1024];
 	const char *mod_name = dr_module_preferred_name(mod);
-  char path[256];
+  char path[512];
 
-  bbtrace_escape_string(mod->full_path, path, 256);
+  bbtrace_escape_string(mod->full_path, path, sizeof(path));
 
 	dr_snprintf(info, sizeof(info),
 		"{\n"
@@ -58,7 +58,7 @@ bbtrace_formatinfo_module(const module_data_t *mod)
 		"\t\"module_end\":\""PFX"\",\n"
 		"\t\"module_entry\":\""PFX"\",\n"
 		"\t\"module_path\":\"%s\"\n"
-		"}",
+		"},",
 		mod_name, mod->start, mod->end, mod->entry_point,
 		path);
 
@@ -76,7 +76,7 @@ bbtrace_formatinfo_symbol(dr_symbol_export_t *sym, app_pc mod_start, app_pc func
         "\t\"module_start_ref\":\""PFX"\",\n"
         "\t\"symbol_name\":\"%s\",\n"
         "\t\"symbol_ordinal\":%d\n"
-        "}",
+        "},",
         func_entry, mod_start, sym->name, sym->ordinal);
 
 	return info;
@@ -93,26 +93,24 @@ bbtrace_formatinfo_symbol_import(dr_symbol_import_t *sym, const char *mod_name)
         "\t\"import_module_name\":\"%s\",\n"
         "\t\"symbol_name\":\"%s\",\n"
         "\t\"symbol_ordinal\":%d\n"
-        "}",
+        "},",
         mod_name, sym->modname, sym->name, sym->ordinal);
 
 	return info;
 }
 
-const char*
-bbtrace_formatinfo_block(app_pc block_entry, app_pc mod_start, uint length)
+int
+bbtrace_formatinfo_block(char *info, size_t info_sz, app_pc block_entry, app_pc mod_start, app_pc block_end, app_pc last_pc, const char * last_asm)
 {
-	static char info[256];
-
-	dr_snprintf(info, sizeof(info),
+	return dr_snprintf(info, info_sz,
 		"{\n"
 		"\t\"block_entry\":\""PFX"\",\n"
 		"\t\"module_start_ref\":\""PFX"\",\n"
-		"\t\"block_end\":\""PFX"\"\n"
-		"}",
-		block_entry, mod_start, block_entry+length);
-
-	return info;
+		"\t\"block_end\":\""PFX"\",\n"
+		"\t\"last_pc\":\""PFX"\",\n"
+    "\t\"last_asm\":\"%s\"\n"
+		"},",
+		block_entry, mod_start, block_end, last_pc, last_asm);
 }
 
 const char *
@@ -126,7 +124,7 @@ bbtrace_formatinfo_exception(dr_exception_t *excpt)
       "\t\"exception_code\":\""PFX"\",\n"
       "\t\"exception_address\":\""PFX"\",\n"
       "\t\"fault_address\":\""PFX"\"\n"
-      "}",
+      "},",
       excpt->record->ExceptionCode, 
       excpt->record->ExceptionAddress,
       fault_address);

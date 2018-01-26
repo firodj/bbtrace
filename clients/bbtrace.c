@@ -54,10 +54,7 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
         mod = dr_lookup_module(func);
         if (mod) {
             const char *info = bbtrace_formatinfo_symbol(sym, mod->start, func);
-
             dr_fprintf(info_file, info);
-            dr_fprintf(info_file, ",\n");
-
             dr_free_module_data(mod);
         }
         res = hashtable_remove(&sym_info_table, func);
@@ -73,7 +70,6 @@ static void iterate_exports(const module_data_t *mod, bool add)
         dr_symbol_export_iterator_start(mod->handle);
 
     dr_fprintf(info_file, info);
-    dr_fprintf(info_file, ",\n");
 
     while (dr_symbol_export_iterator_hasnext(exp_iter)) {
         dr_symbol_export_t *sym = dr_symbol_export_iterator_next(exp_iter);
@@ -102,7 +98,7 @@ static void iterate_exports(const module_data_t *mod, bool add)
 static void iterate_imports(const module_data_t *mod)
 {
     const char *mod_name = dr_module_preferred_name(mod);
-        
+
     dr_symbol_import_iterator_t *imp_iter =
         dr_symbol_import_iterator_start(mod->handle, NULL);
     while (dr_symbol_import_iterator_hasnext(imp_iter)) {
@@ -111,7 +107,6 @@ static void iterate_imports(const module_data_t *mod)
         const char *info = bbtrace_formatinfo_symbol_import(sym, mod_name);
 
         dr_fprintf(info_file, info);
-        dr_fprintf(info_file, ",\n");
     }
     dr_symbol_import_iterator_stop(imp_iter);
 }
@@ -174,6 +169,9 @@ static void clean_call_of_dump_data(uint count)
 static dr_emit_flags_t event_bb_analysis(void *drcontext,
     void *tag, instrlist_t *bb, bool for_trace, bool translating, OUT void **user_data)
 {
+    char info[256];
+    char disasm[128];
+
     instr_t *instr = instrlist_first(bb);
     app_pc src = instr_get_app_pc(instr);
     module_data_t* mod = dr_lookup_module(src);
@@ -182,11 +180,13 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
 
     if (mod) {
         if (mod->start == exe_start) {
-            uint length = instrlist_app_length(drcontext, bb);
-            const char *info = bbtrace_formatinfo_block(src, mod->start, length);
+            instr_t* last_instr = instrlist_last_app(bb);
+            app_pc last_pc = instr_get_app_pc(last_instr);
+            app_pc end = last_pc + instr_length(drcontext, last_instr);
+            instr_disassemble_to_buffer(drcontext, last_instr, disasm, sizeof(disasm));
 
+            bbtrace_formatinfo_block(info, sizeof(info), src, mod->start, end, last_pc, (const char*)disasm);
             dr_fprintf(info_file, info);
-            dr_fprintf(info_file, ",\n");
 
             *user_data = (void *)instr;
         }
@@ -319,8 +319,7 @@ event_exception(void *drcontext, dr_exception_t *excpt)
 {
     const char *info = bbtrace_formatinfo_exception(excpt);
     dr_fprintf(info_file, info);
-    dr_fprintf(info_file, ",\n");
-    
+
     return true;
 }
 
@@ -353,7 +352,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     module_data_t *exe;
 
     char info_filename[256];
-    
+
     dr_snprintf(info_filename, sizeof(info_filename),
         "%s.info", bbtrace_log_filename(0)
     );
@@ -378,7 +377,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     tls_idx = drmgr_register_tls_field();
 
     hashtable_init_ex(&sym_info_table, 6, HASH_INTPTR, false, false, sym_info_entry_free, NULL, NULL);
-    
+
     dr_enable_console_printing();
 
     bbtrace_init();
@@ -395,7 +394,6 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     if (exe) {
         const char *info = bbtrace_formatinfo_module(exe);
         dr_fprintf(info_file, info);
-        dr_fprintf(info_file, ",\n");
         exe_start = exe->start;
         dr_free_module_data(exe);
     }

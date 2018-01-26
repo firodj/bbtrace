@@ -24,6 +24,7 @@ void test_bbtrace_formatinfo_module() {
 	exe.end   = (app_pc)0x440000;
 	exe.entry_point = (app_pc)0x40a000;
 	exe.names.module_name = "notepad.exe";
+  exe.full_path = "C:\\Windows\\WinSxS\\x86_microsoft.windows.common-controls_6595b64144ccf1df_6.0.7601.17514_none_41e6975e2bd6f2b2\\comctl32.dll";
 
 	actual = bbtrace_formatinfo_module(&exe);
 	dr_fprintf(STDERR, "%s\n", actual);
@@ -43,9 +44,11 @@ void test_bbtrace_formatinfo_symbol() {
 }
 
 void test_bbtrace_formatinfo_block() {
-	const char *actual = NULL;
+	char actual[256];
 
-	actual = bbtrace_formatinfo_block((app_pc)0x4000, (app_pc)0x3000, 12);
+	bbtrace_formatinfo_block(actual, sizeof(actual),
+      (app_pc)0x4000, (app_pc)0x4400,
+      (app_pc)0x3000, (app_pc)0x43FA, "nop");
 	dr_fprintf(STDERR, "%s\n", actual);
 }
 
