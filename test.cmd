@@ -1,5 +1,9 @@
 @echo off
 
+IF NOT EXIST logs (
+mkdir logs
+)
+
 SET LOCAL=%~dp0
 SET LOCAL=%LOCAL:~0,-1%
 
