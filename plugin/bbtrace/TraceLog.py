@@ -46,7 +46,8 @@ class TraceData:
 
 	def unpack(self, start=0):
 		length = self.get_count() - start
-		if length <= 0: return
+		if length <= 0:
+			raise Exception('Zero length')
 		
 		for entry in struct.unpack_from('<%dI' % (length,), self.data['data'], start*4):
 			yield entry
@@ -64,6 +65,7 @@ class TraceLog:
 		self.fp = None
 		self.max_d = None
 
+		zeroname = re.sub(r'\.log\.info$', '.log.0001', zeroname)
 		if not re.match(r'.*\.log\.0001$', zeroname):
 			raise Exception("Need .log.0001 file")
 
@@ -90,8 +92,8 @@ class TraceLog:
 		fp = open(fname, 'rb')
 		fp.seek(o)
 
-		while d is None or d >= len(self.locs):
-			while True:
+		while True:
+			while d is None or d >= len(self.locs):
 				o = fp.tell()
 				data = self._get_pkt(fp, is_seeking=True)
 				if not data:
@@ -105,9 +107,12 @@ class TraceLog:
 				else:
 					self.locs.append( (n, o) )
 
-			n += 1
-
 			fp.close()
+
+			if d is not None and d < len(self.locs):
+				return self.locs[d]
+
+			n += 1
 			fname = "%s%04d" % (self.logname, n)
 
 			if not os.path.exists(fname):
@@ -117,11 +122,9 @@ class TraceLog:
 			fp = open(fname, 'rb')
 			fp.seek(0)
 
-		if d is not None:
-			if d < len(self.locs):
-				return self.locs[d]
-		elif len(self.locs):
-			 return self.locs[-1]
+		if d is None and len(self.locs) > 0:
+			return self.locs[-1]
+
 		return None
 
 	def get_data(self, d):

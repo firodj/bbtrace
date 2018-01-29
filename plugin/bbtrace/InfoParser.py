@@ -9,6 +9,10 @@ class InfoParser:
         if not re.match(r'.*\.log\.info$', infoname):
             raise Exception("Need .log.info file")
 
+        self.basic_blocks = {}
+        self.flows = {}
+        self.symbols = {}
+
     def load(self):
 
         fp = open(self.infoname, 'r')
@@ -16,9 +20,12 @@ class InfoParser:
         fp.close()
 
         basic_blocks = {}
+        symbols = {}
 
         for row in json_rows:
-            if len(row) and 'block_entry' in row:
+            if not len(row): continue
+
+            if 'block_entry' in row:
                 entry = int(row['block_entry'], 0)
                 basic_blocks[entry] = {
                     'entry': entry,
@@ -27,7 +34,18 @@ class InfoParser:
                     'last_pc': int(row['last_pc'], 0),
                     'last_asm': row['last_asm']
                 }
+
+            elif 'symbol_entry' in row:
+                entry = int(row['symbol_entry'], 0)
+                symbols[entry] = {
+                    'entry': entry,
+                    'module': int(row['module_start_ref'], 0),
+                    'name': row['symbol_name'],
+                    'ordinal': row['symbol_ordinal']
+                }
+
         self.basic_blocks = basic_blocks
+        self.symbols = symbols
 
     def flow(self):
         flowname = re.sub(r'\.log\.info$', '.log.flow', self.infoname)

@@ -7,7 +7,7 @@ bbtrace.test_app.exe.log.0010
         "module_start":"0x00400000",
         "module_end":"0x00440000",
         "module_entry":"0x0040a000",
-        "module_path":"<NULL>"
+        "module_path":"C:\\Windows\\WinSxS\\x86_microsoft.windows.common-controls_6595b64144ccf1df_6.0.7601.17514_none_41e6975e2bd6f2b2\\comctl32.dll"
 }
 [ ] test_bbtrace_formatinfo_symbol:
 {
@@ -19,17 +19,21 @@ bbtrace.test_app.exe.log.0010
 [ ] test_bbtrace_formatinfo_block:
 {
         "block_entry":"0x00004000",
-        "module_start_ref":"0x00003000",
-        "block_end":"0x0000400c"
+        "module_start_ref":"0x00004400",
+        "block_end":"0x00003000",
+        "last_pc":"0x000043fa",
+        "last_asm":"nop"
 }
 [ ] test_instrlist_app_length:
 3
 [ ] test_bbtrace_dump_thread_data:
-Trace File: bbtrace.log.1
+Trace File: bbtrace.test_app.exe.log.0001
 pos=0, ts=%u
 filling thread data (> 4G) ...
-Trace File: bbtrace.log.2
+Trace File: bbtrace.test_app.exe.log.0002
 last written = 4194324
 flushed written = 0
+[ ] test_bbtrace_escape_string:
+escaped = D:\\With \"Quote\"
 [ ] DONE testing.
-hello world
+some exception
