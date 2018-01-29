@@ -28,6 +28,7 @@ class InfoParser:
             if 'block_entry' in row:
                 entry = int(row['block_entry'], 0)
                 basic_blocks[entry] = {
+                    'type': 'block',
                     'entry': entry,
                     'end': int(row['block_end'], 0),
                     'module': int(row['module_start_ref'], 0),
@@ -38,6 +39,7 @@ class InfoParser:
             elif 'symbol_entry' in row:
                 entry = int(row['symbol_entry'], 0)
                 symbols[entry] = {
+                    'type': 'symbol',
                     'entry': entry,
                     'module': int(row['module_start_ref'], 0),
                     'name': row['symbol_name'],
