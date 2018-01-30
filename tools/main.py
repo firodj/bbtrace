@@ -21,6 +21,8 @@ d = 0
 stacks = {}
 lasts = {}
 
+debug = False
+
 class LogStack:
     def __init__(self, thread):
         self.thread = thread
@@ -54,11 +56,11 @@ class LogStack:
             item = self.stack[-1]
             return item
 
-    def peek_block(self):
+    def peek_block(self, addr):
         for i in xrange(len(self.stack)-1, -1, -1):
             item = self.stack[i]
-            if item['type'] != 'block': continue
-            return item
+            if item['type'] == 'block' and item['end'] == addr:
+                return item
 
     def info(self):
         print("thread: 0x%08x" % (self.thread,))
@@ -82,8 +84,6 @@ while tracelog.max_d is None:
 
     print(tdat)
 
-    debug = False
-
     for addr in tdat.unpack():
         block = infoparser.basic_blocks[addr] if addr in infoparser.basic_blocks else None
         symbol = infoparser.symbols[addr] if addr in infoparser.symbols else None
@@ -92,7 +92,9 @@ while tracelog.max_d is None:
 
         lasts[tid] = (addr, block)
 
-        if not last_addr: continue
+        if not last_addr:
+            print("Start: 0x%08x" % (addr,))
+            continue
 
         last_block = infoparser.basic_blocks[last_addr] if last_addr in infoparser.basic_blocks else None
         last_symbol = infoparser.symbols[last_addr] if last_addr in infoparser.symbols else None
@@ -108,21 +110,13 @@ while tracelog.max_d is None:
                     stacks[tid].append(last_block)
 
             elif re.match(r'ret', last_block['last_asm']):
-                item = stacks[tid].peek()
-                nested_symbol = item['type'] != 'block'
-
-                item = stacks[tid].peek_block()
+                item = stacks[tid].peek_block(addr)
                 if item:
-                    if item['end'] == addr:
-                        stacks[tid].pop_into(addr)
-                    else:
-                        print("------------------------>> 0x%08x" % (addr,))
-                        stacks[tid].info()
-                        print("-------------------------------")
-                        if not nested_symbol:
-                            raise Exception('Owh')
+                    stacks[tid].pop_into(addr)
                 else:
-                    raise Exception("Return on empty stacks")
+                    print("------------------------>> 0x%08x" % (addr,))
+                    stacks[tid].info()
+                    print("-------------------------------")
 
         # block -> symbol
         elif last_block and symbol:
@@ -139,12 +133,14 @@ while tracelog.max_d is None:
             if debug:
                 print("0x%08x %s -> 0x%08x" % (last_addr, last_symbol['name'], addr))
 
-            item = stacks[tid].peek_block()
+            item = stacks[tid].peek_block(addr)
             if item:
-                if item['end'] == addr:
-                    stacks[tid].pop_into(addr)
-                else:
-                    stacks[tid].append(last_symbol)
+                stacks[tid].pop_into(addr)
+            else:
+                stacks[tid].append(last_symbol)
+                print("------------------------>> 0x%08x" % (addr,))
+                stacks[tid].info()
+                print("-------------------------------")
 
         elif last_symbol and symbol:
 
