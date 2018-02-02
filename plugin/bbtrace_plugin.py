@@ -4,6 +4,7 @@ import idautils
 import idc
 import traceback
 from bbtrace.InfoParser import InfoParser
+from bbtrace.Display import Display
 
 
 PLUGIN_VERSION = "0.0.1"
@@ -116,9 +117,9 @@ class BBTrace(idaapi.plugin_t):
 
     flags = 0
     comment = 'BBTrace'
-    help = ''
+    help = 'BBTrace'
     wanted_name = 'BBTrace'
-    wanted_hotkey = ''
+    wanted_hotkey = 'Alt+F10'
 
     ACTION_LOAD_FILE         = "bbtrace:load_file"
 
@@ -155,6 +156,8 @@ class BBTrace(idaapi.plugin_t):
         else:
             print('hexrays is not available.')
 
+        self.display = None
+
         print("BBTrace initialized.")
         return idaapi.PLUGIN_KEEP
 
@@ -162,7 +165,9 @@ class BBTrace(idaapi.plugin_t):
         pass
 
     def run(self, arg):
-        pass
+        if not self.display:
+            self.display = Display()
+        self.display.Show("PyQt hello world")
 
     def interactive_load_file(self):
         """
