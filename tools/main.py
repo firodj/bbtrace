@@ -19,4 +19,6 @@ infoparser.load()
 tracelog = TraceLog(fname)
 
 callstack = CallStackBuilder(infoparser, tracelog)
-callstack.build()
+callstack.parse()
+callstack.draw(90)
+#callstack.build()
