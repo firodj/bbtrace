@@ -98,22 +98,33 @@ class CallStackBuilder:
 			self.histories.append(history)
 
 	def draw(self, d):
-		debug = False
-
 		tdat = self.tracelog.get_data(d)
 		if not tdat:	return False
 		
 		tid = tdat.data['thread']
 		logstack = LogStack(tid)
 		before = None
-
+	
 		if d > 0:
 			history = self.histories[d-1]
 			before = history['lasts'].get(tid)
 			logstack.fill(history['stacks'].get(tid), self.infoparser)
 
-		if debug:
-			print(tdat)
+		before, logstack = self.build_stack(tdat, before, logstack)
+
+		print self.histories[d]
+
+		if before != self.histories[d]['lasts'][tid]:
+			print "Before is invalid!"
+			print before
+		if [x['entry'] for x in logstack.stack] != self.histories[d]['stacks'][tid]:
+			print "Logstack is invalid!"
+			print logstack.stack
+
+	def build_stack(self, tdat, before, logstack):
+		debug = False
+
+		if debug:	print(tdat)
 
 		for addr in tdat.unpack():
 			block = self.infoparser.basic_blocks.get(addr)
@@ -175,14 +186,7 @@ class CallStackBuilder:
 			else:
 				print("-- @ 0x%08x -> @ 0x%08x" % (last_addr, addr))
 
-		print self.histories[d]
-
-		if before != self.histories[d]['lasts'][tid]:
-			print "Before is invalid!"
-			print before
-		if [x['entry'] for x in logstack.stack] != self.histories[d]['stacks'][tid]:
-			print "Logstack is invalid!"
-			print logstack.stack
+		return (before, logstack)
 			
 
 	def build(self):
@@ -200,8 +204,7 @@ class CallStackBuilder:
 
 		while self.tracelog.max_d is None or d < self.tracelog.max_d:
 			tdat = self.tracelog.get_data(d)
-			if not tdat:
-				break
+			if not tdat:	break
 
 			tid = tdat.data['thread']
 			if tid not in stacks:
@@ -209,70 +212,9 @@ class CallStackBuilder:
 			if tid not in lasts:
 				lasts[tid] = None
 
-			if debug:
-				print(tdat)
-
-			for addr in tdat.unpack():
-				block = self.infoparser.basic_blocks.get(addr)
-				symbol = self.infoparser.symbols.get(addr)
-
-				last_addr = lasts[tid]
-
-				lasts[tid] = addr
-
-				if not last_addr:
-					if debug:
-						print("Start: 0x%08x" % (addr,))
-					continue
-
-				last_block = self.infoparser.basic_blocks.get(last_addr)
-				last_symbol = self.infoparser.symbols.get(last_addr)
-
-				# block -> block
-				if last_block and block:
-
-					if debug:
-						print("0x%08x %s -> 0x%08x" % (last_block['last_pc'], last_block['last_asm'], addr))
-
-					if re.match(r'call', last_block['last_asm']):
-						if addr != last_block['end']:
-							stacks[tid].append(last_block)
-
-					elif re.match(r'ret', last_block['last_asm']):
-						item = stacks[tid].peek_block(addr)
-						if item:
-							stacks[tid].pop_into(addr)
-
-				# block -> symbol
-				elif last_block and symbol:
-
-					if debug:
-						print("0x%08x %s -> 0x%08x %s" % (last_block['last_pc'], last_block['last_asm'], addr, symbol['name']))
-
-					if re.match(r'call', last_block['last_asm']):
-						stacks[tid].append(last_block)
-
-				# symbol -> block
-				elif last_symbol and block:
-
-					if debug:
-						print("0x%08x %s -> 0x%08x" % (last_addr, last_symbol['name'], addr))
-
-					item = stacks[tid].peek_block(addr)
-					if item:
-						stacks[tid].pop_into(addr)
-					else:
-						stacks[tid].append(last_symbol)
-
-				elif last_symbol and symbol:
-
-					if debug:
-						print("0x%08x %s -> @ 0x%08x %s" % (last_addr, last_symbol['name'], addr, symbol['name']))
-
-					stacks[tid].append(last_symbol)
-
-				else:
-					print("-- @ 0x%08x -> @ 0x%08x" % (last_addr, addr))
+			before, logstack = self.build_stack(tdat, lasts[tid], stacks[tid])
+			lasts[tid] = before
+			stacks[tid] = logstack
 
 			output = '{\n\t\"lasts": {'
 			output += ', '.join(['"0x%X": "0x%08x"' % (tid, _last) for tid, _last in lasts.iteritems()])
