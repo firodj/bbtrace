@@ -23,7 +23,7 @@ class Canvas(QtWidgets.QWidget):
     def __init__(self):
         super(Canvas, self).__init__()
         self.initUI()
-        self.lines = {}
+        self.drawing = None
 
     def initUI(self):
 
@@ -59,16 +59,23 @@ class Canvas(QtWidgets.QWidget):
         qp.drawRect(0, 0, size.width()-1, size.height()-1)
 
         qp.setPen(QtCore.Qt.NoPen)
-        qp.setBrush(QtGui.QBrush(QtGui.QColor(255, 100, 100)))
+        # qp.setBrush(QtGui.QBrush(QtGui.QColor(255, 100, 100)))
 
-        for y, line in self.lines.iteritems():
-            for b in line:
-                w = b['x1'] - b['x0'] + 1
-                qp.drawRect(1+b['x0'], 1+(y*10), w, 10)
+        if self.drawing:
+            lines = self.drawing(0, size.width() - 2)
+            for y, line in lines.iteritems():
+                for box in line:
+                    if box['color']:
+                        r, g, b = box['color']
+                        qp.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
+                    else:
+                        qp.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+                    w = box['x1'] - box['x0'] + 1
+                    qp.drawRect(1+box['x0'], 1+(y*11), w, 10)
 
 
-    def drawLines(self, lines):
-        self.lines = lines
+    def setDrawing(self, drawing):
+        self.drawing = drawing
         self.update()
 
 
@@ -150,7 +157,7 @@ class Display(idaapi.PluginForm):
         )
         self.parent.setLayout(layout)
 
-        self.refresh_canvas()
+        self.canvas.setDrawing(self.callstack.draw)
 
     def OnClose(self, form):
         """
@@ -171,11 +178,3 @@ class Display(idaapi.PluginForm):
             while ea != idaapi.BADADDR:
                 idc.set_color(ea, idc.CIC_ITEM, col)
                 ea = idc.next_head(ea, basic_block['end'])
-
-    def refresh_canvas(self):
-        size = self.canvas.size()
-        print "Canvas width:", size.width()
-
-        lines = self.callstack.draw(0, size.width() - 2)
-
-        self.canvas.drawLines(lines)

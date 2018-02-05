@@ -4,6 +4,7 @@ import re
 from InfoParser import InfoParser
 from TraceLog import TraceLog
 import json
+import random
 
 
 class FlameGraph:
@@ -16,6 +17,18 @@ class FlameGraph:
 		self.last_y = None
 		self.last_j = False
 		self.lines = {}
+		self.colors = {}
+
+	def new_color(self, theme):
+		v1 = random.random()
+		if theme == 'green':
+			g = 200 + int(55 * v1)
+			x = 50 + int(60 * v1)
+			return (x, g, x)
+		elif theme == 'purple':
+			x = 190 + int(65 * v1)
+			g = 80 + int(60 * v1)
+			return (x, g ,x)
 
 	def notify_draw(self, logstack, action, item):
 		if self.x >= self.max_x or action == 'STOP':
@@ -28,18 +41,32 @@ class FlameGraph:
 
 		if action == 'START':
 			self.last_j = False
+			if len(self.lines[y]) > 0:
+				self.lines[y][-1]['x1'] = self.x
+				self.x += 1
+
+			addr = item['entry']
+			if addr not in self.colors:
+				self.colors[addr] = self.new_color('green' if item['type'] == 'block' else 'purple')
+
 			self.lines[y].append( {
-				'addr': item['entry'],
+				'addr': addr,
 				'x0': self.x,
-				'x1': None
+				'x1': None,
+                'color': self.colors[addr]
 			} )
 		if action == 'PUSH':
 			self.last_j = False
 			self.x += 1
+
+			addr = item['entry']
+			if addr not in self.colors:
+				self.colors[addr] = self.new_color('green' if item['type'] == 'block' else 'purple')
 			self.lines[y].append( {
-				'addr': item['entry'],
+				'addr': addr,
 				'x0': self.x,
-				'x1': None
+				'x1': None,
+                'color': self.colors[addr]
 			} )
 		elif action == 'POP':
 			self.last_j = False
@@ -213,6 +240,8 @@ class CallStackBuilder:
 					if item:
 						logstack.pop_into(addr)
 						err = logstack.notify('POP', block)
+					else:
+						err = logstack.notify('START', block)
 
 				elif re.match(r'j', last_block['last_asm']):
 					err = logstack.notify('JUMP', block)
@@ -226,6 +255,8 @@ class CallStackBuilder:
 				if re.match(r'call', last_block['last_asm']):
 					logstack.append(last_block)
 					err = logstack.notify('PUSH', symbol)
+				else:
+					err = logstack.notify('START', symbol)
 
 			# symbol -> block
 			elif last_symbol and block:
