@@ -23,6 +23,7 @@ class Canvas(QtWidgets.QWidget):
     def __init__(self):
         super(Canvas, self).__init__()
         self.initUI()
+        self.lines = {}
 
     def initUI(self):
 
@@ -57,16 +58,25 @@ class Canvas(QtWidgets.QWidget):
         qp.setBrush(QtCore.Qt.NoBrush)
         qp.drawRect(0, 0, size.width()-1, size.height()-1)
 
+        qp.setPen(QtCore.Qt.NoPen)
+        qp.setBrush(QtGui.QBrush(QtGui.QColor(255, 100, 100)))
+
+        for y, line in self.lines.iteritems():
+            for b in line:
+                w = b['x1'] - b['x0'] + 1
+                qp.drawRect(1+b['x0'], 1+(y*10), w, 10)
+
+
+    def drawLines(self, lines):
+        self.lines = lines
+        self.update()
+
 
 class Display(idaapi.PluginForm):
     def OnCreate(self, form):
         """
         Called when the plugin form is created
         """
-
-        # Get parent widget
-        self.parent = self.FormToPyQtWidget(form)
-        self.PopulateForm()
 
         # Initalize Data
         exename = idc.GetInputFile()
@@ -80,6 +90,13 @@ class Display(idaapi.PluginForm):
 
         self.tracelog = TraceLog(infoname)
         self.callstack = CallStackBuilder(self.infoparser, self.tracelog)
+        self.callstack.parse()
+
+        self.canvas = None
+
+        # Get parent widget
+        self.parent = self.FormToPyQtWidget(form)
+        self.PopulateForm()
 
     def CreateToolbar(self):
         toolbar = QtWidgets.QToolBar()
@@ -126,10 +143,14 @@ class Display(idaapi.PluginForm):
         layout.addWidget(
             self.CreateToolbar()
         )
+
+        self.canvas = Canvas()
         layout.addWidget(
-            Canvas()
+            self.canvas
         )
         self.parent.setLayout(layout)
+
+        self.refresh_canvas()
 
     def OnClose(self, form):
         """
@@ -150,3 +171,11 @@ class Display(idaapi.PluginForm):
             while ea != idaapi.BADADDR:
                 idc.set_color(ea, idc.CIC_ITEM, col)
                 ea = idc.next_head(ea, basic_block['end'])
+
+    def refresh_canvas(self):
+        size = self.canvas.size()
+        print "Canvas width:", size.width()
+
+        lines = self.callstack.draw(0, size.width() - 2)
+
+        self.canvas.drawLines(lines)

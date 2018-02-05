@@ -19,6 +19,12 @@ infoparser.load()
 tracelog = TraceLog(fname)
 
 callstack = CallStackBuilder(infoparser, tracelog)
-#callstack.parse()
-#callstack.draw(0)
+callstack.parse()
 callstack.build()
+
+lines = callstack.draw(0, 100)
+
+rows = lines.keys()
+rows.sort()
+for y in rows:
+    print lines[y]
