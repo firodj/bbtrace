@@ -76,15 +76,38 @@ class Display(idaapi.PluginForm):
         infoname = os.path.join(path, infoname)
 
         self.infoparser = InfoParser(infoname)
+        self.infoparser.load()
+
         self.tracelog = TraceLog(infoname)
         self.callstack = CallStackBuilder(self.infoparser, self.tracelog)
 
     def CreateToolbar(self):
         toolbar = QtWidgets.QToolBar()
+
+        btn_prev = QtWidgets.QPushButton(
+            QtGui.QIcon(asset_path('black-left-pointing-double-triangle-with-vertical-bar_23ee.png')),
+            ""
+        )
+        toolbar.addWidget(btn_prev)
+
         label = QtWidgets.QLabel("Hello from <font color=blue>IDAPython</font>")
         label.setFont(MonospaceFont())
 
         toolbar.addWidget(label)
+
+        btn_next = QtWidgets.QPushButton(
+            QtGui.QIcon(asset_path('black-right-pointing-double-triangle-with-vertical-bar_23ed.png')),
+            ""
+        )
+        toolbar.addWidget(btn_next)
+
+        btn_trace_color = QtWidgets.QPushButton(
+            QtGui.QIcon(asset_path('herb_1f33f.png')),
+            "Trace"
+        )
+        btn_trace_color.clicked.connect(self._btn_trace_color_clicked)
+
+        toolbar.addWidget(btn_trace_color)
 
         btn_clear_color = QtWidgets.QPushButton(
             QtGui.QIcon(asset_path('splashing-sweat-symbol_1f4a6.png')),
@@ -120,3 +143,10 @@ class Display(idaapi.PluginForm):
             idc.SetColor(ea, idc.CIC_ITEM, 0xFFFFFFFF)
             ea = idc.NextHead(ea)
 
+    def _btn_trace_color_clicked(self):
+        col = 0xccffcc
+
+        for ea, basic_block in self.infoparser.basic_blocks.iteritems():
+            while ea != idaapi.BADADDR:
+                idc.set_color(ea, idc.CIC_ITEM, col)
+                ea = idc.next_head(ea, basic_block['end'])
