@@ -1,6 +1,7 @@
 import re
 import json
 import csv
+from collections import OrderedDict
 
 
 class InfoParser:
@@ -9,9 +10,9 @@ class InfoParser:
         if not re.match(r'.*\.log\.info$', infoname):
             raise Exception("Need .log.info file")
 
-        self.basic_blocks = {}
+        self.basic_blocks = OrderedDict()
         self.flows = {}
-        self.symbols = {}
+        self.symbols = OrderedDict()
 
     def load(self):
 
@@ -22,12 +23,16 @@ class InfoParser:
         basic_blocks = {}
         symbols = {}
 
+        csvname = re.sub(r'\.log\.info$', '.log.csv', self.infoname)
+        fcsv = open(csvname, 'wb')
+        infowriter = csv.writer(fcsv)
+
         for row in json_rows:
             if not len(row): continue
 
             if 'block_entry' in row:
                 entry = int(row['block_entry'], 0)
-                basic_blocks[entry] = {
+                block = {
                     'type': 'block',
                     'entry': entry,
                     'end': int(row['block_end'], 0),
@@ -35,19 +40,51 @@ class InfoParser:
                     'last_pc': int(row['last_pc'], 0),
                     'last_asm': row['last_asm']
                 }
+                infowriter.writerow([
+                    block['type'],
+                    block['entry'],
+                    block['module'],
+                    block['end'],
+                    block['last_pc'],
+                    block['last_asm']
+                ])
+                basic_blocks[entry] = block
 
             elif 'symbol_entry' in row:
                 entry = int(row['symbol_entry'], 0)
-                symbols[entry] = {
+                symbol = {
                     'type': 'symbol',
                     'entry': entry,
                     'module': int(row['module_start_ref'], 0),
                     'name': row['symbol_name'],
                     'ordinal': row['symbol_ordinal']
                 }
+                infowriter.writerow([
+                    symbol['type'],
+                    symbol['entry'],
+                    symbol['module'],
+                    symbol['ordinal'],
+                    symbol['name']
+                ])
+                symbols[entry] = symbol
+
+            elif 'module_entry' in row:
+                infowriter.writerow([
+                    'module',
+                    int(row['module_entry'], 0),
+                    int(row['module_start'], 0),
+                    int(row['module_end'], 0),
+                    row['module_name'],
+                    row['module_path']
+                ])
+            else:
+                print row
+                raise Exception()
 
         self.basic_blocks = basic_blocks
         self.symbols = symbols
+
+        fcsv.close()
 
     def flow(self):
         flowname = re.sub(r'\.log\.info$', '.log.flow', self.infoname)
