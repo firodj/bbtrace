@@ -39,3 +39,8 @@ use_DynamoRIO_extension(bbtrace drcontainers)
 add_executable(bbtrace_flow clients/bbtrace_flow.cpp)
 set_target_properties(bbtrace_flow PROPERTIES COMPILE_FLAGS /EHsc)
 target_link_libraries(bbtrace_flow bbtrace_core)
+
+add_executable(bbtrace_util clients/bbtrace_util.cpp)
+set_target_properties(bbtrace_util PROPERTIES COMPILE_FLAGS /EHsc)
+target_link_libraries(bbtrace_util bbtrace_core)
+
