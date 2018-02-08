@@ -76,6 +76,10 @@ public:
         return log_name_;
     }
 
+    bool is_should_shifting() {
+        return data_begin_ >= BLOCK_LEN;
+    }
+
     char *next_packet(pkt_trace_t** pkt_trace_ptr){
         if (data_begin_ == data_end_) {
             log_number_++;
@@ -84,7 +88,7 @@ public:
         }
 
         // shift buffer block
-        if (data_begin_ >= BLOCK_LEN){
+        if (is_should_shifting()){
             std::memcpy(buffer_.get(), buffer_.get() + BLOCK_LEN, BLOCK_LEN);
             data_begin_ -= BLOCK_LEN;
             data_end_ -= BLOCK_LEN;
