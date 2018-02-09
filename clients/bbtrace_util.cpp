@@ -11,18 +11,9 @@
 #include <sstream>
 #include <map>
 #include "async_reader.h"
-#include "tracelog_reader.h"
 #include "bbtrace_core.h"
-
-typedef enum {BLOCK, SYMBOL} block_kind_t;
-typedef enum {NONE, JUMP, CALL, RET} block_jump_t;
-typedef struct {
-  block_kind_t kind;
-  block_jump_t jump;
-  uint end;
-} block_t;
-
-typedef std::map<uint, block_t> blocks_t;
+#include "tracelog_reader.h"
+#include "flame_graph.h"
 
 void get_columns(char *line, std::vector<char*>* columns)
 {
@@ -76,7 +67,8 @@ int main(int argc, const char* argv[])
 
         std::cout << "reading csv." << std::endl;
         char*line;
-        blocks_t blocks;
+
+        FlameGraph graph;
 
         do{
             line = in.next_line();
@@ -92,17 +84,18 @@ int main(int argc, const char* argv[])
 
                     uint entry_pc = atoi(*it);
 
-                    if (blocks.find(entry_pc) != blocks.end()) continue;
-                    blocks[entry_pc] = {
-                        SYMBOL, NONE, 0
-                    };
+                    if (graph.BlockExists(entry_pc)) continue;
+
+                    graph.AddBlock({
+                        SYMBOL, entry_pc, NONE, 0
+                    });
                 }
                 if (strcmp(*it, "block") == 0) {
                     if (++it == columns.end()) continue;
 
                     uint entry_pc = atoi(*it);
 
-                    if (blocks.find(entry_pc) != blocks.end()) continue;
+                    if (graph.BlockExists(entry_pc)) continue;
 
                     it += 2;
                     if (it == columns.end()) continue;
@@ -118,16 +111,16 @@ int main(int argc, const char* argv[])
 
                     block_jump_t jump = NONE;
                     if (*disasm == 'j') {
-                        jump = JUMP;
-                    } else if (strcmp(disasm, "call")) {
+                        jump = JMP;
+                    } else if (strcmp(disasm, "call") == 0) {
                         jump = CALL;
-                    } else if (strcmp(disasm, "ret")) {
+                    } else if (strcmp(disasm, "ret") == 0) {
                         jump = RET;
                     }
 
-                    blocks[entry_pc] = {
-                        BLOCK, jump, end
-                    };
+                    graph.AddBlock({
+                        BLOCK, entry_pc, jump, end
+                    });
                 }
             }
         } while(true);
@@ -135,20 +128,19 @@ int main(int argc, const char* argv[])
         std::cout << "reading tracelog." << std::endl;
         pkt_trace_t *pkt_trace;
         char *dat;
+        bool is_run = true;
 
         for (int d=0; dat = tlog.next_packet(&pkt_trace); d++) {
             app_pc *pc = (app_pc*)dat;
             for(int i=0; i<pkt_trace->size; i++, pc++) {
-                const uint current_pc = (uint) *pc;
-                blocks_t::iterator it = blocks.find(current_pc);
-                if (it == blocks.end()) {
-                    std::cout << "Missing where is:" << current_pc << std::endl;
-                } else {
-                    block_t *block = &it->second;
-                }
+                uint x = graph.Step(pkt_trace->header.thread, (uint) *pc);
+                if (!is_run) break;
             }
             std::cout << ".";
+            if (!is_run) break;
         }
+        graph.Finish();
+        graph.Print();
 
     } catch ( std::exception &e )
     {

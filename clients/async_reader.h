@@ -6,6 +6,7 @@
  * (2017) Fadhil Mandaga <firodj@gmail.com>
  *
  */
+#pragma once
 
 #ifndef CSV_IO_NO_THREAD
 #include <mutex>

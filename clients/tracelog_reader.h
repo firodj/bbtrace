@@ -2,9 +2,22 @@
  * License: MIT
  * Copyright: (2017) Fadhil Mandaga <firodj@gmail.com>
  */
+#pragma once
 
 #include <cassert>
 #include "bbtrace_core.h"
+#include <map>
+
+typedef enum {BLOCK, SYMBOL} block_kind_t;
+typedef enum {NONE, JMP, CALL, RET} block_jump_t;
+typedef struct {
+  block_kind_t kind;
+  uint addr;
+  block_jump_t jump;
+  uint end;
+} block_t;
+
+typedef std::map<uint, block_t> blocks_t;
 
 class TraceLog
 {

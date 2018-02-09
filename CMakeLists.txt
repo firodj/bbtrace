@@ -4,6 +4,8 @@ option(test "Build all tests." OFF)
 
 project(bbtrace)
 
+set (CMAKE_CXX_STANDARD 11)
+
 find_package(DynamoRIO 6.0)
 if (NOT DynamoRIO_FOUND)
 	message(FATAL_ERROR "DynamoRIO package required to build")
