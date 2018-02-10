@@ -77,6 +77,13 @@ class InfoParser:
                     row['module_name'],
                     row['module_path']
                 ])
+
+            elif 'import_module_name' in row:
+                print row
+                pass
+            elif 'fault_address' in row:
+                print row
+                pass
             else:
                 print row
                 raise Exception()

@@ -16,15 +16,15 @@ infoparser = InfoParser(fname)
 infoparser.load()
 # infoparser.flow()
 
-tracelog = TraceLog(fname)
+# tracelog = TraceLog(fname)
 
-callstack = CallStackBuilder(infoparser, tracelog)
-callstack.parse()
-callstack.build()
+# callstack = CallStackBuilder(infoparser, tracelog)
+# callstack.parse()
+# callstack.build()
 
-lines = callstack.draw(0, 100)
-
-rows = lines.keys()
-rows.sort()
-for y in rows:
-    print lines[y]
+# lines = callstack.draw(0, 100)
+#
+# rows = lines.keys()
+# rows.sort()
+# for y in rows:
+#     print lines[y]
