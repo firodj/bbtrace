@@ -140,7 +140,13 @@ int main(int argc, const char* argv[])
             if (!is_run) break;
         }
         graph.Finish();
-        graph.Print();
+        std::cout << std::endl;
+
+        std::ostringstream coachname(tlog.log_name(), std::ios_base::ate);
+        coachname << ".cbin";
+        const std::string &coachname_str = coachname.str();
+
+        graph.Print(coachname_str.c_str());
 
     } catch ( std::exception &e )
     {

@@ -26,6 +26,22 @@ typedef struct {
 
 typedef std::map<uint, history_t> histories_t;
 
+#pragma pack(1)
+typedef struct {
+    uint thread_id;
+    uint max_x;
+    int max_y;
+    size_t num_coaches;
+} pkt_history_t;
+
+typedef struct {
+    uint x_0;
+    uint x_1;
+    int y;
+    uint addr;  // start_block->addr
+} pkt_coach_t;
+#pragma pack()
+
 class FlameGraph{
 private:
     blocks_t blocks_;
@@ -221,8 +237,12 @@ public:
         return history.x;
     }
 
-    void Print()
+    void Print(const char *filename)
     {
+        std::cout << "Writing: " << filename << std::endl;
+
+        std::ofstream outfile(filename, std::ofstream::binary);
+
         for (auto& kv : histories_) {
             history_t &history = kv.second;
 
@@ -232,21 +252,28 @@ public:
             std::cout << "coaches size: " << history.coaches.size() << std::endl;
             std::cout << "railways size: " << history.railways.size() << std::endl;
 
-            std::ofstream outfile("coaches.csv",std::ofstream::binary);
+            pkt_history_t pkt_history;
+
+            pkt_history.thread_id = history.thread_id;
+            pkt_history.max_y = history.railways.size();
+            pkt_history.max_x = history.x;
+            pkt_history.num_coaches = history.coaches.size();
+
+            outfile.write((const char *)&pkt_history, sizeof(pkt_history));
 
             uint i = 0;
             for (auto coach : history.coaches) {
                 i++;
-                outfile << coach->x_0 << "," << coach->x_1 << "," << coach->y << ","
-                    << coach->start_block->addr << "," << coach->start_block->kind << ","
-                    << history.thread_id << ",";
-                if (coach->end_block) {
-                    outfile << coach->end_block->addr << "," << coach->end_block->kind;
-                } else {
-                    outfile << 0 << "," << 0;
-                }
-                outfile << std::endl;
-                if (i % 10000 == 0) std::cout << i << std::endl;
+
+                pkt_coach_t pkt_coach;
+
+                pkt_coach.x_0 = coach->x_0;
+                pkt_coach.x_1 = coach->x_1;
+                pkt_coach.y = coach->y;
+                pkt_coach.addr = coach->start_block->addr;
+
+                outfile.write((const char *)&pkt_coach, sizeof(pkt_coach));
+                if (i % 100000 == 0) std::cout << ".";
             }
         }
     }
