@@ -52,6 +52,40 @@ void test_bbtrace_formatinfo_block() {
 	dr_fprintf(STDERR, "%s\n", actual);
 }
 
+void test_bbtrace_formatinfo_symbol_import() {
+	dr_symbol_import_t sym;
+
+	const char *actual = NULL;
+    const char *modname = "SPEED2.EXE";
+
+	memset(&sym, 0, sizeof(sym));
+
+	sym.modname = "advapi32.dll";
+    sym.name = "RegQueryValueExA";
+	sym.ordinal = 99;
+
+	actual = bbtrace_formatinfo_symbol_import(&sym, modname);
+	dr_fprintf(STDERR, "%s\n", actual);
+}
+
+void test_bbtrace_formatinfo_exception() {
+	dr_exception_t excpt;
+	const char *actual = NULL;
+
+	memset(&excpt, 0, sizeof(excpt));
+
+    EXCEPTION_RECORD record;
+	memset(&record, 0, sizeof(record));
+
+    record.ExceptionCode = 0x40010006;
+    record.ExceptionAddress  = (void*)0x7764c41f;
+    record.ExceptionInformation[1] = 0x0018fd34;
+    excpt.record = &record;
+
+	actual = bbtrace_formatinfo_exception(&excpt);
+	dr_fprintf(STDERR, "%s\n", actual);
+}
+
 void test_instrlist_app_length(void *drcontext) {
 	uint actual = 0;
 
@@ -105,6 +139,22 @@ void test_bbtrace_escape_string() {
   dr_fprintf(STDERR, "escaped = %s\n", out);
 }
 
+void test_bbtrace_append_string() {
+  char out[256];
+  char *next = out;
+  next = bbtrace_append_string(next, "satu", 4, true);
+  next = bbtrace_append_string(next, "dua", 3, false);
+  dr_fprintf(STDERR, "output = %s\n", out);
+}
+
+void test_bbtrace_append_integer() {
+  char out[256];
+  char *next = out;
+  next = bbtrace_append_integer(next, 12345678, true);
+  next = bbtrace_append_integer(next, 0, false);
+  dr_fprintf(STDERR, "output = %s\n", out);
+}
+
 /*
 TEST(oh, ah) {
 	instrlist_t* ilist = instrlist_create(drcontext);
@@ -146,16 +196,30 @@ static void run_tests(void *drcontext)
 	dr_fprintf(STDERR, "[ ] test_bbtrace_formatinfo_block:\n");
 	test_bbtrace_formatinfo_block();
 
+	dr_fprintf(STDERR, "[ ] test_bbtrace_formatinfo_symbol_import:\n");
+	test_bbtrace_formatinfo_symbol_import();
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_formatinfo_exception:\n");
+	test_bbtrace_formatinfo_exception();
+
 	dr_fprintf(STDERR, "[ ] test_instrlist_app_length:\n");
 	test_instrlist_app_length(drcontext);
 
+#if 0
 	dr_fprintf(STDERR, "[ ] test_bbtrace_dump_thread_data:\n");
-  test_bbtrace_dump_thread_data(drcontext);
-	
-	dr_fprintf(STDERR, "[ ] test_bbtrace_escape_string:\n");
-  test_bbtrace_escape_string();
+	test_bbtrace_dump_thread_data(drcontext);
+#endif
 
-  dr_fprintf(STDERR, "[ ] DONE testing.\n");
+	dr_fprintf(STDERR, "[ ] test_bbtrace_escape_string:\n");
+	test_bbtrace_escape_string();
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_append_string:\n");
+	test_bbtrace_append_string();
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_append_integer:\n");
+	test_bbtrace_append_integer();
+
+	dr_fprintf(STDERR, "[ ] DONE testing.\n");
 }
 
 static dr_emit_flags_t

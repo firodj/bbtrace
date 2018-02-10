@@ -11,7 +11,7 @@ if (NOT DynamoRIO_FOUND)
 	message(FATAL_ERROR "DynamoRIO package required to build")
 endif(NOT DynamoRIO_FOUND)
 
-add_library(bbtrace_core STATIC clients/bbtrace_core.c)
+add_library(bbtrace_core STATIC clients/bbtrace_core.c clients/branchlut2.cpp)
 target_compile_definitions(bbtrace_core PUBLIC WINDOWS X86_32)
 target_include_directories(bbtrace_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/clients $ENV{DYNAMORIO_HOME}/include)
 

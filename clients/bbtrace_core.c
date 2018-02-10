@@ -1,6 +1,7 @@
 #include "bbtrace_core.h"
-#include <intrin.h>  
-  
+#include <intrin.h>
+#include "branchlut2.h"
+
 #pragma intrinsic(__rdtsc)
 
 static uint64 g_log_size;
@@ -26,8 +27,30 @@ bbtrace_escape_string(const char *str, char *out, size_t n)
       }
     }
   }
-  out[j++] = 0;
+  out[j++] = '\0';
   return j;
+}
+
+char *
+bbtrace_append_string(char *dst, const char *val, size_t len, bool comma)
+{
+    char *result = dst;
+    *result++ = '"';
+    result = strncpy(result, val, len) + len;
+    *result++ = '"';
+    if (comma) *result++ = ',';
+    *result = '\0';
+    return result;
+}
+
+char *
+bbtrace_append_integer(char *dst, uint val, bool comma)
+{
+    char *result = dst;
+    result = u32toa_branchlut2(val, result);
+    if (comma) *result++ = ',';
+    *result = '\0';
+    return result;
 }
 
 const char *
@@ -47,9 +70,9 @@ bbtrace_formatinfo_module(const module_data_t *mod)
 {
 	static char info[1024];
 	const char *mod_name = dr_module_preferred_name(mod);
-  char path[512];
+	char path[512];
 
-  bbtrace_escape_string(mod->full_path, path, sizeof(path));
+	bbtrace_escape_string(mod->full_path, path, sizeof(path));
 
 	dr_snprintf(info, sizeof(info),
 		"{\n"
