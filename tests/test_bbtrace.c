@@ -142,8 +142,8 @@ void test_bbtrace_escape_string() {
 void test_bbtrace_append_string() {
   char out[256];
   char *next = out;
-  next = bbtrace_append_string(next, "satu", 4, true);
-  next = bbtrace_append_string(next, "dua", 3, false);
+  next = bbtrace_append_string(next, "satu", true);
+  next = bbtrace_append_string(next, "dua", false);
   dr_fprintf(STDERR, "output = %s\n", out);
 }
 

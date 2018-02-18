@@ -32,14 +32,16 @@ bbtrace_escape_string(const char *str, char *out, size_t n)
 }
 
 char *
-bbtrace_append_string(char *dst, const char *val, size_t len, bool comma)
+bbtrace_append_string(char *dst, const char *val, bool comma)
 {
     char *result = dst;
     *result++ = '"';
-    result = strncpy(result, val, len) + len;
+    for (const char *src = val; *src != '\0'; src++) {
+      if (*src == '"') *result++ = '"';
+      *result++ = *src;
+    }
     *result++ = '"';
     if (comma) *result++ = ',';
-    *result = '\0';
     return result;
 }
 
@@ -49,7 +51,6 @@ bbtrace_append_integer(char *dst, uint val, bool comma)
     char *result = dst;
     result = u32toa_branchlut2(val, result);
     if (comma) *result++ = ',';
-    *result = '\0';
     return result;
 }
 
@@ -153,6 +154,78 @@ bbtrace_formatinfo_exception(dr_exception_t *excpt)
       fault_address);
 
   return info;
+}
+
+char *
+bbtrace_formatinfo_module2(char *buf, const module_data_t *mod)
+{
+  const char *mod_name = dr_module_preferred_name(mod);
+  char *next = buf;
+
+  next = bbtrace_append_string(next, "module", true);
+  next = bbtrace_append_integer(next, (uint) mod->entry_point, true);
+  next = bbtrace_append_integer(next, (uint) mod->start, true);
+  next = bbtrace_append_integer(next, (uint) mod->end, true);
+  next = bbtrace_append_integer(next, (uint) mod_name, true);
+  next = bbtrace_append_string(next, mod->full_path, false);
+  *next++ = '\n';
+  return next;
+}
+
+char *
+bbtrace_formatinfo_symbol2(char *buf, dr_symbol_export_t *sym, app_pc mod_start, app_pc func_entry)
+{
+  char *next = buf;
+
+  next = bbtrace_append_string(next, "symbol", true);
+  next = bbtrace_append_integer(next, (uint) func_entry, true);
+  next = bbtrace_append_integer(next, (uint) mod_start, true);
+  next = bbtrace_append_integer(next, (uint) sym->ordinal, true);
+  next = bbtrace_append_string(next, sym->name, false);
+  *next++ = '\n';
+  return next;
+}
+
+char *
+bbtrace_formatinfo_symbol_import2(char *buf, dr_symbol_import_t *sym)
+{
+  char *next = buf;
+
+  next = bbtrace_append_string(next, "import", true);
+  next = bbtrace_append_string(next, sym->modname, true);
+  next = bbtrace_append_integer(next, sym->ordinal, true);
+  next = bbtrace_append_string(next, sym->name, false);
+  *next++ = '\n';
+  return next;
+}
+
+char *
+bbtrace_formatinfo_block2(char *buf, app_pc block_entry, app_pc mod_start, app_pc block_end, app_pc last_pc, const char * last_asm)
+{
+  char *next = buf;
+
+  next = bbtrace_append_string(next, "block", true);
+  next = bbtrace_append_integer(next, (uint) block_entry, true);
+  next = bbtrace_append_integer(next, (uint) mod_start, true);
+  next = bbtrace_append_integer(next, (uint) block_end, true);
+  next = bbtrace_append_integer(next, (uint) last_pc, true);
+  next = bbtrace_append_string(next, last_asm, false);
+  *next++ = '\n';
+  return next;
+}
+
+char *
+bbtrace_formatinfo_exception2(char *buf, dr_exception_t *excpt)
+{
+  void *fault_address = (void *)excpt->record->ExceptionInformation[1];
+  char *next = buf;
+
+  next = bbtrace_append_string(next, "exception", true);
+  next = bbtrace_append_integer(next, (uint) fault_address, true);
+  next = bbtrace_append_integer(next, (uint) excpt->record->ExceptionCode, true);
+  next = bbtrace_append_integer(next, (uint) excpt->record->ExceptionAddress, false);
+  *next++ = '\n';
+  return next;
 }
 
 size_t

@@ -32,15 +32,20 @@ typedef struct {
 extern "C" {
 #endif
 
-char * bbtrace_append_string(char *, const char *, size_t, bool);
+char * bbtrace_append_string(char *, const char *, bool);
 char * bbtrace_append_integer(char *, uint, bool);
 size_t bbtrace_escape_string(const char *, char *, size_t);
 const char *bbtrace_log_filename(uint);
 const char *bbtrace_formatinfo_module(const module_data_t*);
+      char *bbtrace_formatinfo_module2(char *,const module_data_t*);
 const char *bbtrace_formatinfo_symbol(dr_symbol_export_t*, app_pc, app_pc);
+      char *bbtrace_formatinfo_symbol2(char *, dr_symbol_export_t *, app_pc, app_pc);
 const char *bbtrace_formatinfo_symbol_import(dr_symbol_import_t *, const char *);
-int bbtrace_formatinfo_block(char *, size_t, app_pc, app_pc, app_pc, app_pc, const char *);
+      char *bbtrace_formatinfo_symbol_import2(char *, dr_symbol_import_t *);
+        int bbtrace_formatinfo_block(char *, size_t, app_pc, app_pc, app_pc, app_pc, const char *);
+      char *bbtrace_formatinfo_block2(char *, app_pc, app_pc, app_pc, app_pc, const char *);
 const char *bbtrace_formatinfo_exception(dr_exception_t *);
+      char *bbtrace_formatinfo_exception2(char *, dr_exception_t *);
 size_t bbtrace_dump_thread_data(per_thread_t*);
 uint instrlist_app_length(void*, instrlist_t*);
 uint instrlist_length(void*, instrlist_t*);
