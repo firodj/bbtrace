@@ -28,6 +28,11 @@ void test_bbtrace_formatinfo_module() {
 
 	actual = bbtrace_formatinfo_module(&exe);
 	dr_fprintf(STDERR, "%s\n", actual);
+
+  char info[512];
+  char *info_end = bbtrace_formatinfo_module2(info, &exe);
+  *info_end = '\0';
+	dr_fprintf(STDERR, "%s\n", info);
 }
 
 void test_bbtrace_formatinfo_symbol() {
@@ -41,6 +46,11 @@ void test_bbtrace_formatinfo_symbol() {
 
 	actual = bbtrace_formatinfo_symbol(&sym, (app_pc)0x30f0, (app_pc)0x40b0);
 	dr_fprintf(STDERR, "%s\n", actual);
+
+  char info[256];
+  char *info_end = bbtrace_formatinfo_symbol2(info, &sym, (app_pc)0x30f0, (app_pc)0x40b0);
+  *info_end = '\0';
+	dr_fprintf(STDERR, "%s\n", info);
 }
 
 void test_bbtrace_formatinfo_block() {
@@ -50,6 +60,14 @@ void test_bbtrace_formatinfo_block() {
       (app_pc)0x4000, (app_pc)0x4400,
       (app_pc)0x3000, (app_pc)0x43FA, "nop");
 	dr_fprintf(STDERR, "%s\n", actual);
+
+
+  char info[256];
+  char *info_end = bbtrace_formatinfo_block2(info,
+      (app_pc)0x4000, (app_pc)0x4400,
+      (app_pc)0x3000, (app_pc)0x43FA, "nop");
+  *info_end = '\0';
+	dr_fprintf(STDERR, "%s\n", info);
 }
 
 void test_bbtrace_formatinfo_symbol_import() {
@@ -66,6 +84,11 @@ void test_bbtrace_formatinfo_symbol_import() {
 
 	actual = bbtrace_formatinfo_symbol_import(&sym, modname);
 	dr_fprintf(STDERR, "%s\n", actual);
+
+  char info[256];
+  char *info_end = bbtrace_formatinfo_symbol_import2(info, &sym);
+  *info_end = '\0';
+	dr_fprintf(STDERR, "%s\n", info);
 }
 
 void test_bbtrace_formatinfo_exception() {
@@ -84,6 +107,11 @@ void test_bbtrace_formatinfo_exception() {
 
 	actual = bbtrace_formatinfo_exception(&excpt);
 	dr_fprintf(STDERR, "%s\n", actual);
+
+  char info[256];
+  char *info_end = bbtrace_formatinfo_exception2(info, &excpt);
+  *info_end = '\0';
+	dr_fprintf(STDERR, "%s\n", info);
 }
 
 void test_instrlist_app_length(void *drcontext) {

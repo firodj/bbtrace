@@ -35,12 +35,14 @@ char *
 bbtrace_append_string(char *dst, const char *val, bool comma)
 {
     char *result = dst;
-    *result++ = '"';
-    for (const char *src = val; *src != '\0'; src++) {
-      if (*src == '"') *result++ = '"';
-      *result++ = *src;
+    if (val) {
+      *result++ = '"';
+      for (const char *src = val; *src != '\0'; src++) {
+        if (*src == '"') *result++ = '"';
+        *result++ = *src;
+      }
+      *result++ = '"';
     }
-    *result++ = '"';
     if (comma) *result++ = ',';
     return result;
 }
@@ -149,7 +151,7 @@ bbtrace_formatinfo_exception(dr_exception_t *excpt)
       "\t\"exception_address\":\""PFX"\",\n"
       "\t\"fault_address\":\""PFX"\"\n"
       "},",
-      excpt->record->ExceptionCode, 
+      excpt->record->ExceptionCode,
       excpt->record->ExceptionAddress,
       fault_address);
 
@@ -193,7 +195,7 @@ bbtrace_formatinfo_symbol_import2(char *buf, dr_symbol_import_t *sym)
 
   next = bbtrace_append_string(next, "import", true);
   next = bbtrace_append_string(next, sym->modname, true);
-  next = bbtrace_append_integer(next, sym->ordinal, true);
+  next = bbtrace_append_integer(next, (uint) sym->ordinal, true);
   next = bbtrace_append_string(next, sym->name, false);
   *next++ = '\n';
   return next;
@@ -248,7 +250,7 @@ bbtrace_dump_thread_data(per_thread_t *tls_field)
     dr_mutex_lock(g_dump_mutex);
 
     size_t request_size = sz + sizeof(pkt_trace);
-    
+
     g_log_size += request_size;
     if (g_log_size > MAX_TRACE_LOG)
     {
@@ -265,7 +267,7 @@ bbtrace_dump_thread_data(per_thread_t *tls_field)
 
         g_log_size -= MAX_TRACE_LOG;
     }
-    
+
     dr_write_file(g_trace_file, &pkt_trace, sizeof(pkt_trace));
     dr_write_file(g_trace_file, pc_data, sz);
 
@@ -321,7 +323,7 @@ bbtrace_init()
   g_log_size = 0;
   g_log_count = 0;
   g_dump_mutex = dr_mutex_create();
-  
+
   const char *trace_filename = bbtrace_log_filename(++g_log_count);
 
   g_trace_file = dr_open_file(trace_filename, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
