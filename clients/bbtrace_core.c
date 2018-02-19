@@ -56,6 +56,33 @@ bbtrace_append_integer(char *dst, uint val, bool comma)
     return result;
 }
 
+char *
+bbtrace_append_hex(char *dst, uint val, bool comma)
+{
+    char *result = dst;
+    *result++ = '0';
+    *result++ = 'x';
+    char *stop = result;
+    result += 8;
+    char *current = result;
+    while (current > stop) {
+      current--;
+      if (val) {
+        const digit = val & 0xF;
+        if (digit < 10) {
+          *current = '0' + digit;
+        } else {
+          *current = 'a' + digit - 10;
+        }
+        val = val >> 4;
+      } else {
+        *current = '0';
+      }
+    }
+    if (comma) *result++ = ',';
+    return result;
+}
+
 const char *
 bbtrace_log_filename(uint count)
 {
@@ -165,10 +192,10 @@ bbtrace_formatinfo_module2(char *buf, const module_data_t *mod)
   char *next = buf;
 
   next = bbtrace_append_string(next, "module", true);
-  next = bbtrace_append_integer(next, (uint) mod->entry_point, true);
-  next = bbtrace_append_integer(next, (uint) mod->start, true);
-  next = bbtrace_append_integer(next, (uint) mod->end, true);
-  next = bbtrace_append_integer(next, (uint) mod_name, true);
+  next = bbtrace_append_hex(next, (uint) mod->entry_point, true);
+  next = bbtrace_append_hex(next, (uint) mod->start, true);
+  next = bbtrace_append_hex(next, (uint) mod->end, true);
+  next = bbtrace_append_string(next, mod_name, true);
   next = bbtrace_append_string(next, mod->full_path, false);
   *next++ = '\n';
   return next;
@@ -180,8 +207,8 @@ bbtrace_formatinfo_symbol2(char *buf, dr_symbol_export_t *sym, app_pc mod_start,
   char *next = buf;
 
   next = bbtrace_append_string(next, "symbol", true);
-  next = bbtrace_append_integer(next, (uint) func_entry, true);
-  next = bbtrace_append_integer(next, (uint) mod_start, true);
+  next = bbtrace_append_hex(next, (uint) func_entry, true);
+  next = bbtrace_append_hex(next, (uint) mod_start, true);
   next = bbtrace_append_integer(next, (uint) sym->ordinal, true);
   next = bbtrace_append_string(next, sym->name, false);
   *next++ = '\n';
@@ -207,10 +234,10 @@ bbtrace_formatinfo_block2(char *buf, app_pc block_entry, app_pc mod_start, app_p
   char *next = buf;
 
   next = bbtrace_append_string(next, "block", true);
-  next = bbtrace_append_integer(next, (uint) block_entry, true);
-  next = bbtrace_append_integer(next, (uint) mod_start, true);
-  next = bbtrace_append_integer(next, (uint) block_end, true);
-  next = bbtrace_append_integer(next, (uint) last_pc, true);
+  next = bbtrace_append_hex(next, (uint) block_entry, true);
+  next = bbtrace_append_hex(next, (uint) mod_start, true);
+  next = bbtrace_append_hex(next, (uint) block_end, true);
+  next = bbtrace_append_hex(next, (uint) last_pc, true);
   next = bbtrace_append_string(next, last_asm, false);
   *next++ = '\n';
   return next;
@@ -223,9 +250,9 @@ bbtrace_formatinfo_exception2(char *buf, dr_exception_t *excpt)
   char *next = buf;
 
   next = bbtrace_append_string(next, "exception", true);
-  next = bbtrace_append_integer(next, (uint) fault_address, true);
-  next = bbtrace_append_integer(next, (uint) excpt->record->ExceptionCode, true);
-  next = bbtrace_append_integer(next, (uint) excpt->record->ExceptionAddress, false);
+  next = bbtrace_append_hex(next, (uint) fault_address, true);
+  next = bbtrace_append_hex(next, (uint) excpt->record->ExceptionCode, true);
+  next = bbtrace_append_hex(next, (uint) excpt->record->ExceptionAddress, false);
   *next++ = '\n';
   return next;
 }

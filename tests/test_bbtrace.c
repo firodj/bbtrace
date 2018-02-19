@@ -172,6 +172,7 @@ void test_bbtrace_append_string() {
   char *next = out;
   next = bbtrace_append_string(next, "satu", true);
   next = bbtrace_append_string(next, "dua", false);
+  *next = '\0';
   dr_fprintf(STDERR, "output = %s\n", out);
 }
 
@@ -180,6 +181,16 @@ void test_bbtrace_append_integer() {
   char *next = out;
   next = bbtrace_append_integer(next, 12345678, true);
   next = bbtrace_append_integer(next, 0, false);
+  *next = '\0';
+  dr_fprintf(STDERR, "output = %s\n", out);
+}
+
+void test_bbtrace_append_hex() {
+  char out[256];
+  char *next = out;
+  next = bbtrace_append_hex(next, 0xFA1A, true);
+  next = bbtrace_append_hex(next, 0, false);
+  *next = '\0';
   dr_fprintf(STDERR, "output = %s\n", out);
 }
 
@@ -246,6 +257,9 @@ static void run_tests(void *drcontext)
 
 	dr_fprintf(STDERR, "[ ] test_bbtrace_append_integer:\n");
 	test_bbtrace_append_integer();
+
+	dr_fprintf(STDERR, "[ ] test_bbtrace_append_hex:\n");
+	test_bbtrace_append_hex();
 
 	dr_fprintf(STDERR, "[ ] DONE testing.\n");
 }

@@ -27,6 +27,7 @@ void get_columns(char *line, std::vector<char*>* columns)
             if(*col_end != quote)
                 ++col_end;
             else{
+                col_begin++;
                 do{
                     ++col_end;
                     while(*col_end != quote){
@@ -37,6 +38,7 @@ void get_columns(char *line, std::vector<char*>* columns)
                     }
                     ++col_end;
                 }while(*col_end == quote);
+                *(col_end-1) = '\0';
             }
         }
         if(*col_end == '\0'){
@@ -82,7 +84,7 @@ int main(int argc, const char* argv[])
                 if (strcmp(*it, "symbol") == 0) {
                     if (++it == columns.end()) continue;
 
-                    uint entry_pc = atoi(*it);
+                    uint entry_pc = strtoul(*it, nullptr, 0);
 
                     if (graph.BlockExists(entry_pc)) continue;
 
@@ -93,14 +95,14 @@ int main(int argc, const char* argv[])
                 if (strcmp(*it, "block") == 0) {
                     if (++it == columns.end()) continue;
 
-                    uint entry_pc = atoi(*it);
+                    uint entry_pc = strtoul(*it, nullptr, 0);
 
                     if (graph.BlockExists(entry_pc)) continue;
 
                     it += 2;
                     if (it == columns.end()) continue;
 
-                    uint end = atoi(*it);
+                    uint end = strtoul(*it, nullptr, 0);
 
                     it += 2;
                     if (it == columns.end()) continue;

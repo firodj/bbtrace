@@ -34,6 +34,7 @@ extern "C" {
 
 char * bbtrace_append_string(char *, const char *, bool);
 char * bbtrace_append_integer(char *, uint, bool);
+char * bbtrace_append_hex(char *, uint, bool);
 size_t bbtrace_escape_string(const char *, char *, size_t);
 const char *bbtrace_log_filename(uint);
 const char *bbtrace_formatinfo_module(const module_data_t*);
