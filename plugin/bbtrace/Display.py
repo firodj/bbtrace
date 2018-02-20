@@ -5,8 +5,7 @@ import idc
 from PyQt5 import QtCore, QtGui, QtWidgets
 import sip
 from InfoParser import InfoParser
-from TraceLog import TraceLog
-from CallStackBuilder import CallStackBuilder
+from FlameGraphReader import FlameGraphReader
 
 def asset_path(path):
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', path)
@@ -89,15 +88,14 @@ class Display(idaapi.PluginForm):
         exename = idc.GetInputFile()
         path = os.path.dirname(idc.GetInputFilePath())
 
-        infoname = "bbtrace.%s.log.info" % (exename,)
+        infoname = "bbtrace.%s.log.csv" % (exename,)
         infoname = os.path.join(path, infoname)
 
         self.infoparser = InfoParser(infoname)
         self.infoparser.load()
 
-        self.tracelog = TraceLog(infoname)
-        self.callstack = CallStackBuilder(self.infoparser, self.tracelog)
-        self.callstack.parse()
+        self.flamegraph = FlameGraphReader(self.infoparser)
+        self.flamegraph.parse()
 
         self.canvas = None
 
@@ -157,7 +155,7 @@ class Display(idaapi.PluginForm):
         )
         self.parent.setLayout(layout)
 
-        self.canvas.setDrawing(self.callstack.draw)
+        self.canvas.setDrawing(self.flamegraph.draw)
 
     def OnClose(self, form):
         """

@@ -7,86 +7,45 @@ from collections import OrderedDict
 class InfoParser:
     def __init__(self, infoname):
         self.infoname = infoname
-        if not re.match(r'.*\.log\.info$', infoname):
-            raise Exception("Need .log.info file")
+        if not re.match(r'.*\.log\.csv$', infoname):
+            raise Exception("Need .log.csv file")
 
         self.basic_blocks = OrderedDict()
         self.flows = {}
         self.symbols = OrderedDict()
 
     def load(self):
-
-        fp = open(self.infoname, 'r')
-        json_rows = json.load(fp)
-        fp.close()
-
         basic_blocks = {}
         symbols = {}
 
-        csvname = re.sub(r'\.log\.info$', '.log.csv', self.infoname)
-        fcsv = open(csvname, 'wb')
-        infowriter = csv.writer(fcsv)
+        fcsv = open(self.infoname, 'r')
+        inforeader = csv.reader(fcsv, skipinitialspace=True)
 
-        for row in json_rows:
+        for row in inforeader:
             if not len(row): continue
 
-            if 'block_entry' in row:
-                entry = int(row['block_entry'], 0)
+            if 'block' == row[0]:
+                entry = int(row[1], 0)
                 block = {
-                    'type': 'block',
+                    'type': row[0],
                     'entry': entry,
-                    'end': int(row['block_end'], 0),
-                    'module': int(row['module_start_ref'], 0),
-                    'last_pc': int(row['last_pc'], 0),
-                    'last_asm': row['last_asm']
+                    'module': int(row[2], 0),
+                    'end': int(row[3], 0),
+                    'last_pc': int(row[4], 0),
+                    'last_asm': row[5]
                 }
-                infowriter.writerow([
-                    block['type'],
-                    block['entry'],
-                    block['module'],
-                    block['end'],
-                    block['last_pc'],
-                    block['last_asm']
-                ])
                 basic_blocks[entry] = block
 
-            elif 'symbol_entry' in row:
-                entry = int(row['symbol_entry'], 0)
+            elif 'symbol' == row[0]:
+                entry = int(row[1], 0)
                 symbol = {
                     'type': 'symbol',
                     'entry': entry,
-                    'module': int(row['module_start_ref'], 0),
-                    'name': row['symbol_name'],
-                    'ordinal': row['symbol_ordinal']
+                    'module': int(row[2], 0),
+                    'ordinal': row[3],
+                    'name': row[4],
                 }
-                infowriter.writerow([
-                    symbol['type'],
-                    symbol['entry'],
-                    symbol['module'],
-                    symbol['ordinal'],
-                    symbol['name']
-                ])
                 symbols[entry] = symbol
-
-            elif 'module_entry' in row:
-                infowriter.writerow([
-                    'module',
-                    int(row['module_entry'], 0),
-                    int(row['module_start'], 0),
-                    int(row['module_end'], 0),
-                    row['module_name'],
-                    row['module_path']
-                ])
-
-            elif 'import_module_name' in row:
-                print row
-                pass
-            elif 'fault_address' in row:
-                print row
-                pass
-            else:
-                print row
-                raise Exception()
 
         self.basic_blocks = basic_blocks
         self.symbols = symbols
