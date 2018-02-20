@@ -1,6 +1,11 @@
 @echo off
 
+SET ARGS=--config RelWithDebInfo
+IF NOT "%1"=="" (
+  SET ARGS=%ARGS% --target %1
+)
 pushd build
 rem nmake.exe /f Makefile %1 %2 %3 %4 %5 %6 %7 %8 %9
-cmake --build . --config RelWithDebInfo
+echo %ARGS%
+cmake --build . %ARGS%
 popd

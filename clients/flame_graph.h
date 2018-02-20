@@ -4,6 +4,7 @@
 #include <tracelog_reader.h>
 #include <cassert>
 #include <fstream>
+#include <iomanip>
 
 typedef struct {
     uint x_0;
@@ -42,10 +43,14 @@ typedef struct {
 } pkt_coach_t;
 #pragma pack()
 
+typedef std::unordered_map<uint, uint64_t> app_pc_list_t;
+typedef std::unordered_map<uint, app_pc_list_t> app_pc_map_t;
+
 class FlameGraph{
 private:
     blocks_t blocks_;
     histories_t histories_;
+    app_pc_map_t pc_to_pc_;
 
     history_t& GetHistory(uint thread_id)
     {
@@ -140,6 +145,22 @@ public:
         return true;
     }
 
+    void UpdateXref(history_t &history, block_t *block)
+    {
+        uint current_pc = block->addr;
+        uint last_pc = history.last_block->last;
+
+        if (pc_to_pc_.find( current_pc ) == pc_to_pc_.end()) {
+            pc_to_pc_[current_pc][last_pc] = 0;
+        } else {
+            if (pc_to_pc_[current_pc].find(last_pc) == pc_to_pc_[current_pc].end()) {
+                pc_to_pc_[current_pc][last_pc] = 0;
+            } else {
+                pc_to_pc_[current_pc][last_pc]++;
+            }
+        }
+    }
+
     void DoPush(history_t &history, block_t *block)
     {
         history.x++;
@@ -197,6 +218,7 @@ public:
                 if (block->kind == BLOCK) {
                     if (history.last_block->jump == CALL) {
                         if (block->addr != history.last_block->end) {
+                            UpdateXref(history, block);
                             DoPush(history, block);
                         } else {
                             DoStart(history, block);
@@ -274,6 +296,24 @@ public:
 
                 outfile.write((const char *)&pkt_coach, sizeof(pkt_coach));
                 if (i % 100000 == 0) std::cout << ".";
+            }
+        }
+
+        std::cout << std::endl;
+    }
+
+    void Flow(const char *filename)
+    {
+        std::cout << "Writing: " << filename << std::endl;
+
+        std::ofstream outfile(filename, std::ofstream::out);
+
+        for (app_pc_map_t::const_iterator it1 = pc_to_pc_.begin(); it1 != pc_to_pc_.end(); ++it1) {
+            for (app_pc_list_t::const_iterator it2 = it1->second.begin(); it2 != it1->second.end(); ++it2) {
+                outfile << std::internal << std::setfill('0')
+                        << std::setw(10) << std::hex << std::showbase << it1->first << ","
+                        << std::setw(10) << std::showbase << it2->first << ","
+                        << std::dec << it2->second << std::endl;
             }
         }
     }

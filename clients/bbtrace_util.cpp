@@ -79,35 +79,29 @@ int main(int argc, const char* argv[])
             std::vector<char*> columns;
             get_columns(line, &columns);
 
-            std::vector<char*>::iterator it = columns.begin();
-            if (it != columns.end()) {
-                if (strcmp(*it, "symbol") == 0) {
-                    if (++it == columns.end()) continue;
+            if (columns.size() > 1) {
+                if (strcmp(columns[0], "symbol") == 0) {
+                    if (columns.size() < 5) continue;
 
-                    uint entry_pc = strtoul(*it, nullptr, 0);
+                    uint entry_pc = strtoul(columns[1], nullptr, 0);
 
                     if (graph.BlockExists(entry_pc)) continue;
 
                     graph.AddBlock({
-                        SYMBOL, entry_pc, NONE, 0
+                        SYMBOL, entry_pc, NONE, 0, 0
                     });
                 }
-                if (strcmp(*it, "block") == 0) {
-                    if (++it == columns.end()) continue;
+                if (strcmp(columns[0], "block") == 0) {
+                    if (columns.size() < 6) continue;
 
-                    uint entry_pc = strtoul(*it, nullptr, 0);
+                    uint entry_pc = strtoul(columns[1], nullptr, 0);
 
                     if (graph.BlockExists(entry_pc)) continue;
 
-                    it += 2;
-                    if (it == columns.end()) continue;
+                    uint end = strtoul(columns[3], nullptr, 0);
+                    uint last = strtoul(columns[4], nullptr, 0);
 
-                    uint end = strtoul(*it, nullptr, 0);
-
-                    it += 2;
-                    if (it == columns.end()) continue;
-
-                    char *disasm = *it;
+                    char *disasm = columns[5];
                     char *space = strchr(disasm, ' ');
                     if (space) *space = '\0';
 
@@ -121,7 +115,7 @@ int main(int argc, const char* argv[])
                     }
 
                     graph.AddBlock({
-                        BLOCK, entry_pc, jump, end
+                        BLOCK, entry_pc, jump, end, last
                     });
                 }
             }
@@ -147,8 +141,12 @@ int main(int argc, const char* argv[])
         std::ostringstream coachname(tlog.log_name(), std::ios_base::ate);
         coachname << ".cbin";
         const std::string &coachname_str = coachname.str();
-
         graph.Print(coachname_str.c_str());
+
+        std::ostringstream flowname(tlog.log_name(), std::ios_base::ate);
+        flowname << ".flow";
+        const std::string &flowname_str = flowname.str();
+        graph.Flow(flowname_str.c_str());
 
     } catch ( std::exception &e )
     {

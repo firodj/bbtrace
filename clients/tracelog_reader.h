@@ -15,6 +15,7 @@ typedef struct {
   uint addr;
   block_jump_t jump;
   uint end;
+  uint last;
 } block_t;
 
 typedef std::map<uint, block_t> blocks_t;
