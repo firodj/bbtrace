@@ -5,15 +5,15 @@ import re
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'plugin')))
 
 from bbtrace.InfoParser import InfoParser
-from bbtrace.TraceLog import TraceLog
-from bbtrace.CallStackBuilder import CallStackBuilder
-
+from bbtrace.FlameGraphReader import FlameGraphReader
 
 fname = sys.argv[1]
 
 infoparser = InfoParser(fname)
 
 infoparser.load()
+
+flamegraph = FlameGraphReader()
 # infoparser.flow()
 
 # tracelog = TraceLog(fname)

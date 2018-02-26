@@ -53,43 +53,21 @@ class InfoParser:
         fcsv.close()
 
     def flow(self):
-        flowname = re.sub(r'\.log\.info$', '.log.flow', self.infoname)
+        flowname = re.sub(r'\.log\.csv$', '.log.flow', self.infoname)
 
         fp = open(flowname, 'r')
         flowreader = csv.reader(fp, skipinitialspace=True)
         flows = {}
 
         for row in flowreader:
-            block_addr = int(row[0], 0)
-            last_block_addr = int(row[1], 0)
+            target_pc = int(row[0], 0)
+            jump_from_pc = int(row[1], 0)
             occurence = int(row[2])
 
-            if block_addr not in self.basic_blocks:
-                continue
+            if target_pc not in flows:
+                flows[target_pc] = {}
 
-            if last_block_addr not in self.basic_blocks:
-                continue
-
-            before_basic_block = self.basic_blocks[last_block_addr]
-
-            if block_addr == before_basic_block['end']:
-                continue
-
-            disasm = before_basic_block['last_asm']
-            flowtype = None
-
-            if re.match(r'j\w', disasm):
-                flowtype = 'fl_JN'
-            elif re.match(r'call', disasm):
-                flowtype = 'fl_CN'
-            else:
-                continue
-
-            if block_addr not in flows:
-                flows[block_addr] = {}
-
-            before_pc = before_basic_block['last_pc']
-            flows[block_addr][before_pc] = flowtype
+            flows[target_pc][jump_from_pc] = occurence
 
         fp.close()
 

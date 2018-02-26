@@ -2,6 +2,7 @@ import os
 import idaapi
 import idautils
 import idc
+import ida_ua
 from PyQt5 import QtCore, QtGui, QtWidgets
 import sip
 from InfoParser import InfoParser
@@ -96,6 +97,7 @@ class Display(idaapi.PluginForm):
 
         self.flamegraph = FlameGraphReader(self.infoparser)
         self.flamegraph.parse()
+        self.infoparser.flow()
 
         self.canvas = None
 
@@ -171,8 +173,27 @@ class Display(idaapi.PluginForm):
 
     def _btn_trace_color_clicked(self):
         col = 0xccffcc
+        col2 = 0xbbeebb
 
         for ea, basic_block in self.infoparser.basic_blocks.iteritems():
             while ea != idaapi.BADADDR:
                 idc.set_color(ea, idc.CIC_ITEM, col)
                 ea = idc.next_head(ea, basic_block['end'])
+
+        for target_pc, flow in self.infoparser.flows.iteritems():
+            refs = []
+            for xref in idautils.XrefsTo(target_pc):
+                refs.append(xref.frm)
+
+            for jump_from_pc, flowtype in flow.iteritems():
+
+                if jump_from_pc in refs:
+                    continue
+
+                if ida_ua.ua_mnem(jump_from_pc) == 'call':
+                    flowtype = idaapi.fl_CN
+                else:
+                    flowtype = idaapi.fl_JN
+
+                idc.set_color(jump_from_pc, idc.CIC_ITEM, col2)
+                idc.AddCodeXref(jump_from_pc, target_pc, flowtype)

@@ -174,42 +174,6 @@ class BBTrace(idaapi.plugin_t):
         Loading bbtrace.
         """
 
-        exename = idc.GetInputFile()
-        path = os.path.dirname(idc.GetInputFilePath())
-
-        infoname = "bbtrace.%s.log.info" % (exename,)
-        flowname = "bbtrace.%s.log.flow" % (exename,)
-
-        self.infoparser = InfoParser(os.path.join(path, infoname))
-
-        self.infoparser.load()
-
-        col = 0xccffcc
-
-        for ea, basic_block in self.infoparser.basic_blocks.iteritems():
-            while ea != BADADDR:
-                idc.set_color(ea, CIC_ITEM, col)
-                ea = idc.next_head(ea, basic_block['end'])
-
-        self.infoparser.flow()
-
-        flowtypes = {
-            'fl_JN': fl_JN,
-            'fl_CN': fl_CN
-        }
-
-        for block_addr, flow in self.infoparser.flows.iteritems():
-            refs = []
-            for xref in XrefsTo(block_addr):
-                refs.append(xref.frm)
-
-            for before_pc, flowtype in flow.iteritems():
-
-                if before_pc in refs:
-                    continue
-
-                idc.AddCodeXref(before_pc, block_addr, flowtypes[flowtype])
-
         print("Done BbTrace.")
 
     def hexrays_event(self, event, *args):
