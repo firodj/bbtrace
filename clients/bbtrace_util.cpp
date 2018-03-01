@@ -54,7 +54,7 @@ void get_columns(char *line, std::vector<char*>* columns)
 int main(int argc, const char* argv[])
 {
     if (argc <= 1) {
-        std::cout << "Syntax:" << argv[0] << "<trace-log>.0001" << std::endl;
+        std::cout << "Syntax: " << argv[0] << " <trace-log>.0001" << std::endl;
         return 0;
     }
 
@@ -139,9 +139,9 @@ int main(int argc, const char* argv[])
         std::cout << std::endl;
 
         std::ostringstream coachname(tlog.log_name(), std::ios_base::ate);
-        coachname << ".cbin";
+        coachname << ".tree";   // ".cbin"
         const std::string &coachname_str = coachname.str();
-        graph.Print(coachname_str.c_str());
+        graph.PrintTree(coachname_str.c_str());
 
         std::ostringstream flowname(tlog.log_name(), std::ios_base::ate);
         flowname << ".flow";

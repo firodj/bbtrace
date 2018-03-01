@@ -10,19 +10,38 @@ typedef struct {
     uint x_0;
     uint x_1;
     int y;
+
     block_t *start_block;
     block_t *end_block;
 } coach_t;
 
 typedef std::vector<std::shared_ptr<coach_t>> coaches_t;
 
+typedef struct tree_t tree_t;
+
+typedef std::map<uint, std::unique_ptr<tree_t>> tree_children_t;
+
+typedef struct tree_t {
+    tree_t* parent;
+    tree_children_t children;
+
+    block_t *start_block;
+    block_t *end_block;
+} tree_t;
+
 typedef struct {
     uint thread_id;
     block_t *last_block;
+
+    //
     int y;
     uint x;
     coaches_t railways;
     coaches_t coaches;
+    //
+
+    tree_t root;
+    tree_t* last_tree;
 } history_t;
 
 typedef std::map<uint, history_t> histories_t;
@@ -56,7 +75,8 @@ private:
     {
         histories_t::iterator it = histories_.find(thread_id);
         if (it == histories_.end()) {
-            histories_[thread_id] = {thread_id, nullptr, 0, 0, {}, {}};
+            histories_[thread_id] = {thread_id, nullptr, 0, 0, {}, {}, {nullptr}, nullptr};
+            histories_[thread_id].last_tree = &histories_[thread_id].root;
         }
 
         return histories_[thread_id];
@@ -120,6 +140,16 @@ public:
         // std::cout << "start x: " << history.x << " addr:" << block->addr << std::endl;
     }
 
+    void DoStart2(history_t &history, block_t *block)
+    {
+        if (history.last_tree->children.find(block->addr) == history.last_tree->children.end()) {
+            history.last_tree->children[block->addr] = std::unique_ptr<tree_t>(new tree_t {history.last_tree, {}, block, nullptr});
+        }
+
+        history.last_tree = history.last_tree->children[block->addr].get();
+        history.last_tree->end_block = nullptr;
+    }
+
     bool DoPopInto(history_t &history, block_t *block)
     {
         assert(block->kind == BLOCK);
@@ -145,20 +175,28 @@ public:
         return true;
     }
 
-    void UpdateXref(history_t &history, block_t *block)
+    bool DoPopInto2(history_t &history, block_t *block)
     {
-        uint current_pc = block->addr;
-        uint last_pc = history.last_block->last;
+        tree_t *current = nullptr;
+        tree_t *found = nullptr;
 
-        if (pc_to_pc_.find( current_pc ) == pc_to_pc_.end()) {
-            pc_to_pc_[current_pc][last_pc] = 0;
-        } else {
-            if (pc_to_pc_[current_pc].find(last_pc) == pc_to_pc_[current_pc].end()) {
-                pc_to_pc_[current_pc][last_pc] = 0;
-            } else {
-                pc_to_pc_[current_pc][last_pc]++;
+        for (current = history.last_tree->parent; current; current = current->parent) {
+            if (current->end_block &&
+                current->end_block->kind == BLOCK &&
+                current->end_block->end == block->addr) {
+                    found = current;
+                    break;
             }
         }
+
+        if (found) {
+            history.last_tree->end_block = history.last_block;
+            history.last_tree = found;
+            history.last_tree->end_block = block;
+            return true;
+        }
+
+        return false;
     }
 
     void DoPush(history_t &history, block_t *block)
@@ -189,11 +227,39 @@ public:
         // std::cout << "push x: " << history.x - 1 << " end addr: " << history.last_block->addr << " return: " << history.last_block->end << " -|> y: " << history.y << " addr: " << block->addr << std::endl;
     }
 
+    void DoPush2(history_t &history, block_t *block)
+    {
+        history.last_tree->end_block = history.last_block;
+
+        if (history.last_tree->children.find(block->addr) == history.last_tree->children.end()) {
+            history.last_tree->children[block->addr] = std::unique_ptr<tree_t>(new tree_t {history.last_tree, {}, block, nullptr});
+        }
+
+        history.last_tree = history.last_tree->children[block->addr].get();
+        history.last_tree->end_block = nullptr;
+    }
+
     void Finish()
     {
         for (auto& kv : histories_) {
             history_t &history = kv.second;
             Stop(history, -1);
+        }
+    }
+
+    void UpdateXref(history_t &history, block_t *block)
+    {
+        uint current_pc = block->addr;
+        uint last_pc = history.last_block->last;
+
+        if (pc_to_pc_.find( current_pc ) == pc_to_pc_.end()) {
+            pc_to_pc_[current_pc][last_pc] = 0;
+        } else {
+            if (pc_to_pc_[current_pc].find(last_pc) == pc_to_pc_[current_pc].end()) {
+                pc_to_pc_[current_pc][last_pc] = 0;
+            } else {
+                pc_to_pc_[current_pc][last_pc]++;
+            }
         }
     }
 
@@ -213,21 +279,24 @@ public:
 
         if (history.last_block == nullptr) {
             DoStart(history, block);
+            DoStart2(history, block);
         } else {
             if (history.last_block->kind == BLOCK) {
                 if (block->kind == BLOCK) {
                     if (history.last_block->jump == CALL) {
                         if (block->addr != history.last_block->end) {
                             UpdateXref(history, block);
+
                             DoPush(history, block);
+                            DoPush2(history, block);
                         } else {
                             DoStart(history, block);
+                            DoStart2(history, block);
                         }
                     } else
                     if (history.last_block->jump == RET) {
-                        if (!DoPopInto(history, block)) {
-                            DoStart(history, block);
-                        }
+                        if (!DoPopInto(history, block)) DoStart(history, block);
+                        if (!DoPopInto2(history, block)) DoStart2(history, block);
                     } else
                     if (history.last_block->jump == JMP) {
                         //
@@ -236,19 +305,21 @@ public:
                     assert(block->kind == SYMBOL);
                     if (history.last_block->jump == CALL) {
                         DoPush(history, block);
+                        DoPush2(history, block);
                     } else {
                         DoStart(history, block);
+                        DoStart2(history, block);
                     }
                 }
             } else {
                 assert(history.last_block->kind == SYMBOL);
                 if (block->kind == BLOCK) {
-                    if (!DoPopInto(history, block)) {
-                        DoPush(history, block);
-                    }
+                    if (!DoPopInto(history, block)) DoPush(history, block);
+                    if (!DoPopInto2(history, block)) DoPush2(history, block);
                 } else {
                     assert(block->kind == SYMBOL);
                     DoPush(history, block);
+                    DoPush2(history, block);
                 }
             }
 
@@ -257,6 +328,43 @@ public:
         history.last_block = block;
 
         return history.x;
+    }
+
+    void OutputTree(std::ostream &out, tree_t *tree, int level = 0) {
+      if (level == 0) {
+          out << "+ ";
+      } else {
+          out << "   ";
+          for (int tab = level; tab > 1; tab--) {
+            out << "|  ";
+          }
+          out << "|_ ";
+      }
+
+      if (tree->start_block) {
+        out << std::internal << std::setfill('0')
+            << std::setw(10) << std::hex << std::showbase << tree->start_block->addr << std::endl;
+      } else {
+        out << "(root)" << std::endl;
+      }
+
+      for(auto& kv : tree->children) {
+        tree_t *child = kv.second.get();
+        OutputTree(out, child, level + 1);
+      }
+    }
+
+    void PrintTree(const char *filename)
+    {
+        std::cout << "Writing: " << filename << std::endl;
+
+        std::ofstream outfile(filename, std::ofstream::binary);
+
+        for (auto& kv : histories_) {
+            history_t &history = kv.second;
+
+            OutputTree(outfile, &history.root, 0);
+        }
     }
 
     void Print(const char *filename)
