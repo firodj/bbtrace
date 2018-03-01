@@ -129,13 +129,12 @@ int main(int argc, const char* argv[])
         for (int d=0; dat = tlog.next_packet(&pkt_trace); d++) {
             app_pc *pc = (app_pc*)dat;
             for(int i=0; i<pkt_trace->size; i++, pc++) {
-                uint x = graph.Step(pkt_trace->header.thread, (uint) *pc);
+                graph.Step(pkt_trace->header.thread, (uint) *pc);
                 if (!is_run) break;
             }
             std::cout << ".";
             if (!is_run) break;
         }
-        graph.Finish();
         std::cout << std::endl;
 
         std::ostringstream coachname(tlog.log_name(), std::ios_base::ate);
@@ -148,11 +147,14 @@ int main(int argc, const char* argv[])
         const std::string &flowname_str = flowname.str();
         graph.Flow(flowname_str.c_str());
 
+        std::cout << "Done." << std::endl;
+
     } catch ( std::exception &e )
     {
         std::cerr << "Caught " << e.what( ) << std::endl;
         std::cerr << "Type " << typeid( e ).name( ) << std::endl;
         return -1;
     }
+
     return 0;
 }
