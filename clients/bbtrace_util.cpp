@@ -142,7 +142,7 @@ int main(int argc, const char* argv[])
         std::cout << std::endl;
 
         std::ostringstream coachname(tlog.log_name(), std::ios_base::ate);
-        coachname << ".tree";   // ".cbin"
+        coachname << ".tree";
         const std::string &coachname_str = coachname.str();
         graph.PrintTree(coachname_str.c_str());
 

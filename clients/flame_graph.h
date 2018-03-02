@@ -18,8 +18,8 @@ public:
     block_t *start_block;
     block_t *end_block;
 
-    uint64_t size;
-    uint64_t hits;
+    uint size;
+    uint64 hits;
 
 	tree_t(tree_t * _parent, block_t * _block) :
 		parent(_parent), start_block(_block), size(1), hits(0), end_block(nullptr)
@@ -60,18 +60,9 @@ typedef std::map<uint, history_t> histories_t;
 
 #pragma pack(1)
 typedef struct {
-    uint thread_id;
-    uint max_x;
-    int max_y;
-    size_t num_coaches;
-} pkt_history_t;
-
-typedef struct {
-    uint x_0;
-    uint x_1;
-    int y;
-    uint addr;  // start_block->addr
-} pkt_coach_t;
+    uint addr;
+    uint size;
+} pkt_tree_t;
 #pragma pack()
 
 typedef std::unordered_map<uint, uint64_t> app_pc_list_t;
@@ -226,7 +217,7 @@ public:
         history.last_block = block;
     }
 
-    uint64_t CalculateSizeTree(tree_t *tree)
+    uint CalculateSizeTree(tree_t *tree)
     {
       for(auto& kv : tree->children) {
           tree_t *child = kv.second;
@@ -235,30 +226,19 @@ public:
       return tree->size;
     }
 
-    /*
-    void OutputTree(std::ostream &out, tree_t *tree, int level = 0) {
-      if (level == 0) {
-          out << "+ ";
-      } else {
-          out << "   ";
-          for (int tab = level; tab > 1; tab--) {
-            out << "|  ";
-          }
-          out << "|_ ";
-      }
+    void OutputTree(std::ostream *out, tree_t *tree, int level = 0) {
+        pkt_tree_t pkt_tree;
 
-      if (tree->start_block) {
-        out << std::internal << std::setfill('0')
-            << std::setw(10) << std::hex << std::showbase << tree->start_block->addr << std::endl;
-      } else {
-        out << "(root)" << std::endl;
-      }
+        pkt_tree.addr = tree->start_block ? tree->start_block->addr : 0;
+        pkt_tree.size = tree->size;
 
-      for(auto& kv : tree->children) {
-        tree_t *child = &kv.second;
-        OutputTree(out, child, level + 1);
-      }
-    }*/
+        out->write((const char *)&pkt_tree, sizeof(pkt_tree));
+
+        for(auto& kv : tree->children) {
+            tree_t *child = kv.second;
+            OutputTree(out, child, level + 1);
+        }
+    }
 
     void PrintTree(const char *filename)
     {
@@ -270,12 +250,13 @@ public:
 
             std::cout << "thread id: " << history.thread_id << std::endl;
 
-            uint64_t size = CalculateSizeTree(&history.root);
-            std::cout << "size: " << size << std::endl;
+            uint size = CalculateSizeTree(&history.root);
 
-            //OutputTree(outfile, &history.root, 0);
+            std::cout << "dump tree: ..." << size << std::endl;
+            OutputTree(&outfile, &history.root, 0);
         }
     }
+
 #if 0
     void Print(const char *filename)
     {
