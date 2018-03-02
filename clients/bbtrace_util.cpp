@@ -128,6 +128,8 @@ int main(int argc, const char* argv[])
         bool is_run = true;
 
         for (int d=0; (dat = tlog.next_packet(&pkt_trace)); d++) {
+            assert(pkt_trace->header.code == PKT_CODE_TRACE);
+
             uint *pc = (uint*)dat;
 
             for(int i=0; i<pkt_trace->size; i++, pc++) {

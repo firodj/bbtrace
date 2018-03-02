@@ -8,7 +8,7 @@
 
 class tree_t;
 
-typedef std::map<uint, tree_t> tree_children_t;
+typedef std::map<uint, tree_t*> tree_children_t;
 
 class tree_t {
 public:
@@ -32,6 +32,10 @@ public:
 
   virtual ~tree_t()
   {
+      for(auto& kv : children) {
+          tree_t *child = kv.second;
+          delete child;
+      }
   }
 };
 
@@ -105,11 +109,10 @@ public:
     void DoStart2(history_t &history, block_t *block)
     {
         if (history.last_tree->children.find(block->addr) == history.last_tree->children.end()) {
-            history.last_tree->children[block->addr].parent = history.last_tree;
-            history.last_tree->children[block->addr].start_block = block;
+            history.last_tree->children[block->addr] = new tree_t(history.last_tree, block);
         }
 
-        history.last_tree = &history.last_tree->children[block->addr];
+        history.last_tree = history.last_tree->children[block->addr];
         history.last_tree->end_block = nullptr;
         history.last_tree->hits++;
     }
@@ -143,11 +146,10 @@ public:
         history.last_tree->end_block = history.last_block;
 
         if (history.last_tree->children.find(block->addr) == history.last_tree->children.end()) {
-            history.last_tree->children[block->addr].parent = history.last_tree;
-            history.last_tree->children[block->addr].start_block = block;
+            history.last_tree->children[block->addr] = new tree_t(history.last_tree, block);
         }
 
-        history.last_tree = &history.last_tree->children[block->addr];
+        history.last_tree = history.last_tree->children[block->addr];
         history.last_tree->end_block = nullptr;
         history.last_tree->hits++;
     }
@@ -227,12 +229,13 @@ public:
     uint64_t CalculateSizeTree(tree_t *tree)
     {
       for(auto& kv : tree->children) {
-          tree_t *child = &kv.second;
+          tree_t *child = kv.second;
           tree->size += CalculateSizeTree(child);
       }
       return tree->size;
     }
 
+    /*
     void OutputTree(std::ostream &out, tree_t *tree, int level = 0) {
       if (level == 0) {
           out << "+ ";
@@ -255,7 +258,7 @@ public:
         tree_t *child = &kv.second;
         OutputTree(out, child, level + 1);
       }
-    }
+    }*/
 
     void PrintTree(const char *filename)
     {

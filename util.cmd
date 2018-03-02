@@ -1,3 +1,4 @@
 @echo off
 
-build\RelWithDebInfo\bbtrace_util.exe %1 %2 %3
+rem c:\drmemory\bin\drmemory.exe --^
+ build\Debug\bbtrace_util.exe %1 %2 %3

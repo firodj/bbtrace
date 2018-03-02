@@ -1,6 +1,6 @@
 @echo off
 
-SET ARGS=--config RelWithDebInfo
+SET ARGS=--config Debug
 IF NOT "%1"=="" (
   SET ARGS=%ARGS% --target %1
 )
