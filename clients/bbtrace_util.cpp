@@ -10,8 +10,9 @@
 #include <unordered_map>
 #include <sstream>
 #include <map>
+#include <vector>
 #include "async_reader.h"
-#include "bbtrace_core.h"
+#include "bbtrace_data.h"
 #include "tracelog_reader.h"
 #include "flame_graph.h"
 
@@ -126,10 +127,11 @@ int main(int argc, const char* argv[])
         char *dat;
         bool is_run = true;
 
-        for (int d=0; dat = tlog.next_packet(&pkt_trace); d++) {
-            app_pc *pc = (app_pc*)dat;
+        for (int d=0; (dat = tlog.next_packet(&pkt_trace)); d++) {
+            uint *pc = (uint*)dat;
+
             for(int i=0; i<pkt_trace->size; i++, pc++) {
-                graph.Step(pkt_trace->header.thread, (uint) *pc);
+                graph.Step(pkt_trace->header.thread, *pc);
                 if (!is_run) break;
             }
             std::cout << ".";

@@ -5,8 +5,8 @@
 #pragma once
 
 #include <cassert>
-#include "bbtrace_core.h"
 #include <map>
+#include "bbtrace_data.h"
 
 typedef enum {BLOCK, SYMBOL} block_kind_t;
 typedef enum {NONE, JMP, CALL, RET} block_jump_t;
@@ -116,7 +116,7 @@ public:
         *pkt_trace_ptr = (pkt_trace_t*)(buffer_.get() + data_begin_);
         data_begin_ += sizeof(pkt_trace_t);
         char *ret = buffer_.get() + data_begin_;
-        data_begin_ += (*pkt_trace_ptr)->size * sizeof(app_pc);
+        data_begin_ += (*pkt_trace_ptr)->size * sizeof(uint);
 
         return ret;
     }

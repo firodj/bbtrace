@@ -1,10 +1,10 @@
 #pragma once
 
-#include <map>
-#include <tracelog_reader.h>
 #include <cassert>
 #include <fstream>
 #include <iomanip>
+#include <map>
+#include "tracelog_reader.h"
 
 class tree_t;
 

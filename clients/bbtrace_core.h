@@ -1,32 +1,10 @@
 #pragma once
 
 #include "dr_api.h"
-
-typedef enum {
-	PKT_CODE_TRACE = 1
-} pkt_code_t;
-
-#pragma pack(1)
-typedef struct {
-	pkt_code_t code;
-    uint64 ts;
-    uint thread;
-} pkt_header_t;
-
-typedef struct {
-    pkt_header_t header;
-    uint size;
-} pkt_trace_t;
-#pragma pack()
+#include "bbtrace_data.h"
 
 #define BUF_TOTAL 1024*1024
 #define MAX_TRACE_LOG 4294967295
-
-typedef struct {
-    uint pos;
-    uint64 ts;
-    thread_id_t thread;
-} per_thread_t;
 
 #ifdef __cplusplus
 extern "C" {
