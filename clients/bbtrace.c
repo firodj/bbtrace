@@ -53,14 +53,9 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     if (sym) {
         mod = dr_lookup_module(func);
         if (mod) {
-#ifdef XXX
-            const char *info = bbtrace_formatinfo_symbol(sym, mod->start, func);
-            dr_fprintf(info_file, info);
-#else
             char info[256];
             char *info_end = bbtrace_formatinfo_symbol2(info, sym, mod->start, func);
             dr_write_file(info_file, info, info_end - info);
-#endif
             dr_free_module_data(mod);
         }
         res = hashtable_remove(&sym_info_table, func);
@@ -70,15 +65,9 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
 static void iterate_exports(const module_data_t *mod, bool add)
 {
     const char *mod_name = dr_module_preferred_name(mod);
-#ifdef XXX
-    const char *info = bbtrace_formatinfo_module(mod);
-    dr_fprintf(info_file, info);
-#else
     char info[512];
     char *info_end = bbtrace_formatinfo_module2(info, mod);
     dr_write_file(info_file, info, info_end - info);
-#endif
-
     dr_symbol_export_iterator_t *exp_iter =
         dr_symbol_export_iterator_start(mod->handle);
 
@@ -114,14 +103,9 @@ static void iterate_imports(const module_data_t *mod)
         dr_symbol_import_iterator_start(mod->handle, NULL);
     while (dr_symbol_import_iterator_hasnext(imp_iter)) {
         dr_symbol_import_t *sym = dr_symbol_import_iterator_next(imp_iter);
-#ifdef XXX
-        const char *info = bbtrace_formatinfo_symbol_import(sym, mod_name);
-        dr_fprintf(info_file, info);
-#else
         char info[256];
         char *info_end = bbtrace_formatinfo_symbol_import2(info, sym);
         dr_write_file(info_file, info, info_end - info);
-#endif
     }
     dr_symbol_import_iterator_stop(imp_iter);
 }
@@ -199,13 +183,8 @@ static dr_emit_flags_t event_bb_analysis(void *drcontext,
             app_pc last_pc = instr_get_app_pc(last_instr);
             app_pc end = last_pc + instr_length(drcontext, last_instr);
             instr_disassemble_to_buffer(drcontext, last_instr, disasm, sizeof(disasm));
-#ifdef XXX
-            bbtrace_formatinfo_block(info, sizeof(info), src, mod->start, end, last_pc, (const char*)disasm);
-            dr_fprintf(info_file, info);
-#else
             char *info_end = bbtrace_formatinfo_block2(info, src, mod->start, end, last_pc, (const char*)disasm);
             dr_write_file(info_file, info, info_end - info);
-#endif
 
             *user_data = (void *)instr;
         }
@@ -336,15 +315,9 @@ static dr_emit_flags_t event_bb_insert(void *drcontext, void *tag,
 static bool
 event_exception(void *drcontext, dr_exception_t *excpt)
 {
-#ifdef XXX
-    const char *info = bbtrace_formatinfo_exception(excpt);
-    dr_fprintf(info_file, info);
-#else
     char info[256];
     char *info_end = bbtrace_formatinfo_exception2(info, excpt);
     dr_write_file(info_file, info, info_end - info);
-#endif
-
     return true;
 }
 
@@ -359,9 +332,6 @@ static void event_exit(void)
 
     bbtrace_shutdown();
 
-#ifdef XXX
-    dr_fprintf(info_file, "{}\n]");
-#endif
     dr_close_file(info_file);
 
     hashtable_delete(&sym_info_table);
@@ -381,11 +351,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     char info_filename[256];
 
     dr_snprintf(info_filename, sizeof(info_filename),
-#ifdef XXX
-        "%s.info",
-#else
         "%s.csv",
-#endif
         bbtrace_log_filename(0)
     );
 
@@ -422,18 +388,10 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     }
 
     exe = dr_get_main_module();
-#ifdef XXX
-    dr_fprintf(info_file, "[\n");
-#endif
     if (exe) {
-#ifdef XXX
-        const char *info = bbtrace_formatinfo_module(exe);
-        dr_fprintf(info_file, info);
-#else
         char info[512];
         char *info_end = bbtrace_formatinfo_module2(info, exe);
         dr_write_file(info_file, info, info_end - info);
-#endif
         exe_start = exe->start;
         dr_free_module_data(exe);
     }
