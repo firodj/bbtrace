@@ -21,14 +21,14 @@ public:
     uint size;
     uint64 hits;
 
-	tree_t(tree_t * _parent, block_t * _block) :
-		parent(_parent), start_block(_block), size(1), hits(0), end_block(nullptr)
-	{
-	}
+  tree_t(tree_t * _parent, block_t * _block) :
+    parent(_parent), start_block(_block), size(1), hits(0), end_block(nullptr)
+  {
+  }
 
-	tree_t() : tree_t(nullptr, nullptr)
-	{
-	}
+  tree_t() : tree_t(nullptr, nullptr)
+  {
+  }
 
   virtual ~tree_t()
   {
@@ -46,10 +46,10 @@ public:
     tree_t root;
     tree_t* last_tree;
 
-	history_t(): last_tree(nullptr), last_block(nullptr), thread_id(0)
-	{
-		last_tree = &root;
-	}
+  history_t(): last_tree(nullptr), last_block(nullptr), thread_id(0)
+  {
+    last_tree = &root;
+  }
 
   virtual ~history_t()
   {
@@ -102,7 +102,6 @@ public:
         if (history.last_tree->children.find(block->addr) == history.last_tree->children.end()) {
             history.last_tree->children[block->addr] = new tree_t(history.last_tree, block);
         }
-
         history.last_tree = history.last_tree->children[block->addr];
         history.last_tree->end_block = nullptr;
         history.last_tree->hits++;
@@ -208,7 +207,7 @@ public:
                     if (!DoPopInto2(history, block)) DoPush2(history, block);
                 } else {
                     assert(block->kind == SYMBOL);
-                    DoPush2(history, block);
+                    //
                 }
             }
 
@@ -217,11 +216,11 @@ public:
         history.last_block = block;
     }
 
-    uint CalculateSizeTree(tree_t *tree)
+    uint CalculateSizeTree(tree_t *tree, int level = 0)
     {
       for(auto& kv : tree->children) {
           tree_t *child = kv.second;
-          tree->size += CalculateSizeTree(child);
+          tree->size += CalculateSizeTree(child, level + 1);
       }
       return tree->size;
     }

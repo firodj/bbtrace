@@ -86,103 +86,13 @@ bbtrace_append_hex(char *dst, uint val, bool comma)
 const char *
 bbtrace_log_filename(uint count)
 {
-	static char filename[32];
+  static char filename[32];
   const char *app_name = dr_get_application_name();
-	if (count > 0)
-		dr_snprintf(filename, sizeof(filename), "bbtrace.%s.log.%04d", app_name, count);
-	else
-		dr_snprintf(filename, sizeof(filename), "bbtrace.%s.log", app_name);
-	return filename;
-}
-
-const char *
-bbtrace_formatinfo_module(const module_data_t *mod)
-{
-	static char info[1024];
-	const char *mod_name = dr_module_preferred_name(mod);
-	char path[512];
-
-	bbtrace_escape_string(mod->full_path, path, sizeof(path));
-
-	dr_snprintf(info, sizeof(info),
-		"{\n"
-		"\t\"module_name\":\"%s\",\n"
-		"\t\"module_start\":\""PFX"\",\n"
-		"\t\"module_end\":\""PFX"\",\n"
-		"\t\"module_entry\":\""PFX"\",\n"
-		"\t\"module_path\":\"%s\"\n"
-		"},",
-		mod_name, mod->start, mod->end, mod->entry_point,
-		path);
-
-	return info;
-}
-
-const char *
-bbtrace_formatinfo_symbol(dr_symbol_export_t *sym, app_pc mod_start, app_pc func_entry)
-{
-	static char info[256];
-
-	dr_snprintf(info, sizeof(info),
-        "{\n"
-        "\t\"symbol_entry\":\""PFX"\",\n"
-        "\t\"module_start_ref\":\""PFX"\",\n"
-        "\t\"symbol_name\":\"%s\",\n"
-        "\t\"symbol_ordinal\":%d\n"
-        "},",
-        func_entry, mod_start, sym->name, sym->ordinal);
-
-	return info;
-}
-
-const char *
-bbtrace_formatinfo_symbol_import(dr_symbol_import_t *sym, const char *mod_name)
-{
-	static char info[256];
-
-	dr_snprintf(info, sizeof(info),
-        "{\n"
-        "\t\"module_name\":\"%s\",\n"
-        "\t\"import_module_name\":\"%s\",\n"
-        "\t\"symbol_name\":\"%s\",\n"
-        "\t\"symbol_ordinal\":%d\n"
-        "},",
-        mod_name, sym->modname, sym->name, sym->ordinal);
-
-	return info;
-}
-
-int
-bbtrace_formatinfo_block(char *info, size_t info_sz, app_pc block_entry, app_pc mod_start, app_pc block_end, app_pc last_pc, const char * last_asm)
-{
-	return dr_snprintf(info, info_sz,
-		"{\n"
-		"\t\"block_entry\":\""PFX"\",\n"
-		"\t\"module_start_ref\":\""PFX"\",\n"
-		"\t\"block_end\":\""PFX"\",\n"
-		"\t\"last_pc\":\""PFX"\",\n"
-    "\t\"last_asm\":\"%s\"\n"
-		"},",
-		block_entry, mod_start, block_end, last_pc, last_asm);
-}
-
-const char *
-bbtrace_formatinfo_exception(dr_exception_t *excpt)
-{
-	static char info[256];
-
-  void *fault_address = (void *)excpt->record->ExceptionInformation[1];
-	dr_snprintf(info, sizeof(info),
-      "{\n"
-      "\t\"exception_code\":\""PFX"\",\n"
-      "\t\"exception_address\":\""PFX"\",\n"
-      "\t\"fault_address\":\""PFX"\"\n"
-      "},",
-      excpt->record->ExceptionCode,
-      excpt->record->ExceptionAddress,
-      fault_address);
-
-  return info;
+  if (count > 0)
+    dr_snprintf(filename, sizeof(filename), "bbtrace.%s.log.%04d", app_name, count);
+  else
+    dr_snprintf(filename, sizeof(filename), "bbtrace.%s.log", app_name);
+  return filename;
 }
 
 char *
@@ -311,11 +221,11 @@ bbtrace_dump_thread_data(per_thread_t *tls_field)
 uint
 instrlist_app_length(void *drcontext, instrlist_t *ilist)
 {
-	uint length = 0;
-	for (instr_t *walk_instr = instrlist_first_app(ilist);
+  uint length = 0;
+  for (instr_t *walk_instr = instrlist_first_app(ilist);
         walk_instr != NULL;
         walk_instr = instr_get_next_app(walk_instr))
-	{
+  {
         length += instr_length(drcontext, walk_instr);
     }
     return length;
@@ -324,11 +234,11 @@ instrlist_app_length(void *drcontext, instrlist_t *ilist)
 uint
 instrlist_length(void *drcontext, instrlist_t *ilist)
 {
-	uint length = 0;
-	for (instr_t *walk_instr = instrlist_first(ilist);
+  uint length = 0;
+  for (instr_t *walk_instr = instrlist_first(ilist);
         walk_instr != NULL;
         walk_instr = instr_get_next(walk_instr))
-	{
+  {
         length += instr_length(drcontext, walk_instr);
     }
     return length;

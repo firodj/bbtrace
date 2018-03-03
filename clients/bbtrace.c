@@ -13,12 +13,21 @@ static file_t info_file;
 
 static hashtable_t sym_info_table;
 
+// Hack
+static void nop_delay(uint rep)
+{
+  for (uint a = 0; a < rep; a++) {
+    for (uint b = 0; b < 0x1000; b++) {
+      _asm nop;
+    }
+  }
+}
+
 static void lib_entry(void *wrapcxt, INOUT void **user_data)
 {
     dr_symbol_export_t *sym = NULL;
     const char *mod_name = NULL;
     app_pc func = drwrap_get_func(wrapcxt);
-    module_data_t *mod;
     app_pc ret_addr = NULL;
     void *drcontext = drwrap_get_drcontext(wrapcxt);
 
@@ -28,6 +37,9 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     app_pc *pc_data = (app_pc*)data;
     bool res = false;
 
+    nop_delay(6);
+
+#if 0
     DR_TRY_EXCEPT(drcontext, {
         ret_addr = drwrap_get_retaddr(wrapcxt);
     }, { /* EXCEPT */
@@ -35,7 +47,7 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     });
 
     if (ret_addr) {
-        mod = dr_lookup_module(ret_addr);
+        module_data_t *mod = dr_lookup_module(ret_addr); // FIXME: timeconsuming
         if (mod) {
             from_exe = mod->start == exe_start;
             dr_free_module_data(mod);
@@ -43,15 +55,16 @@ static void lib_entry(void *wrapcxt, INOUT void **user_data)
     }
 
     if (!from_exe) return;
+#endif
 
     pc_data[tls_field->pos++] = func;
     if (tls_field->pos >= BUF_TOTAL) {
         bbtrace_dump_thread_data(tls_field);
     }
 
-    sym = hashtable_lookup(&sym_info_table, func);
+    sym = hashtable_lookup(&sym_info_table, func);  // FIXME: Time consuming!
     if (sym) {
-        mod = dr_lookup_module(func);
+        module_data_t *mod = dr_lookup_module(func);
         if (mod) {
             char info[256];
             char *info_end = bbtrace_formatinfo_symbol2(info, sym, mod->start, func);
