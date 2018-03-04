@@ -102,19 +102,34 @@ class Drawing:
         return self.lines
 
 class Canvas(QtWidgets.QWidget):
+    WIDTH_tree = 20
+
     def __init__(self):
         super(Canvas, self).__init__()
         self.initUI()
         self.drawing = None
         self.startX = 0
+        self.drawing_lines = None
 
     def initUI(self):
         # self.setGeometry(300, 300, 280, 170)
         self.setWindowTitle('Drawing graph')
         self.show()
+        self.setMouseTracking(True)
+
+    def event(self, event):
+        if event.type() == QtCore.QEvent.ToolTip:
+            box = self.itemAt( event.pos() )
+            if box:
+                QtWidgets.QToolTip.showText(event.globalPos(), box['name'])
+            else:
+                QtWidgets.QToolTip.hideText()
+                event.ignore()
+            return True
+
+        return super(Canvas, self).event(event)
 
     def paintEvent(self, event):
-
         qp = QtGui.QPainter()
         qp.begin(self)
         self.drawWidget(qp)
@@ -135,13 +150,18 @@ class Canvas(QtWidgets.QWidget):
         qp.setBrush(QtCore.Qt.NoBrush)
         qp.drawRect(0, 0, size.width()-1, size.height()-1)
 
-        WIDTH_tree = 20
+        self.rows = {}
+        self.drawing_lines = {}
 
         if self.drawing:
             min_x = self.startX
-            max_x = min_x + ((size.width() + WIDTH_tree) / WIDTH_tree)
+            max_x = min_x + ((size.width() + self.WIDTH_tree) / self.WIDTH_tree)
             lines = self.drawing.draw(min_x, max_x)
+
             for y, line in lines.iteritems():
+                if y not in self.drawing_lines:
+                    self.drawing_lines[y] = []
+
                 for box in line:
                     if box['color']:
                         r, g, b = box['color']
@@ -149,11 +169,11 @@ class Canvas(QtWidgets.QWidget):
                     else:
                         qp.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0)))
 
-                    w = (box['x1'] - box['x0']) * WIDTH_tree - 1
-                    h = WIDTH_tree - 1
+                    w = (box['x1'] - box['x0']) * self.WIDTH_tree - 1
+                    h = self.WIDTH_tree - 1
 
-                    x0 = 1+(box['x0'] * WIDTH_tree)
-                    y0 = 1+(y * WIDTH_tree)
+                    x0 = 1+(box['x0'] * self.WIDTH_tree)
+                    y0 = 1+(y * self.WIDTH_tree)
 
                     qp.setPen(QtCore.Qt.NoPen)
                     rect = QtCore.QRect(x0, y0, w, h)
@@ -161,6 +181,24 @@ class Canvas(QtWidgets.QWidget):
 
                     qp.setPen(QtGui.QColor(10, 10, 10))
                     qp.drawText(rect, QtCore.Qt.AlignLeading, box['name'])
+
+                    self.drawing_lines[y].append({
+                        'rect': rect,
+                        'name': box['name'],
+                        'addr': box['addr']
+                        })
+
+    def itemAt(self, point):
+        if not self.drawing_lines: return
+
+        y = (point.y() - 1 )/ self.WIDTH_tree
+        x = point.x()
+        line = self.drawing_lines.get(y)
+        if not line: return
+
+        for box in line:
+            if x >= box['rect'].x() and x <= (box['rect'].x() + box['rect'].width()):
+                return box
 
     def setDrawing(self, drawing):
         self.drawing = drawing
@@ -174,6 +212,7 @@ class Canvas(QtWidgets.QWidget):
     def setStartX(self, x):
         self.startX = x
         self.update()
+
 
 class Display(idaapi.PluginForm):
     def OnCreate(self, form):
