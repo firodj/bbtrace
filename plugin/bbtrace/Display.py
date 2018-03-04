@@ -7,6 +7,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 import sip
 from InfoParser import InfoParser
 from FlameGraphReader import FlameGraphReader
+import random
 
 def asset_path(path):
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets', path)
@@ -19,18 +20,97 @@ def MonospaceFont():
     font.setStyleHint(QtGui.QFont.TypeWriter)
     return font
 
+
+class Drawing:
+    def __init__(self, reader):
+        self.reader = reader
+        self.lines = {}
+        self.colors = {}
+        self.activeIndex = None
+
+    def new_color(self, theme):
+        """
+        https://github.com/brendangregg/FlameGraph/blob/a8d807a11c0f22871134324bda709618ca482b58/flamegraph.pl#L442
+        """
+
+        v1 = random.random()
+
+        if theme == 'green':
+            g = 200 + int(55 * v1)
+            x = 50 + int(60 * v1)
+            return (x, g, x)
+        elif theme == 'purple':
+            x = 190 + int(65 * v1)
+            g = 80 + int(60 * v1)
+            return (x, g ,x)
+        elif theme == 'red':
+            r = 200 + int(55 * v1)
+            x = 50 + int(80 * v1);
+            return (r, x ,x)
+
+    def draw(self, min_x, max_x):
+        self.lines = {}
+
+        root_tree = self.reader.roots[self.activeIndex]
+
+        trees = [(root_tree, 0, 0)]
+        while len(trees) > 0:
+            tree, x, y = trees.pop(0)
+
+            width = tree['size']
+
+            if x + width > min_x and x < max_x:
+
+                if y not in self.lines: self.lines[y] = []
+
+                addr = tree['addr']
+
+                if addr == 0:
+                    name = '(root)'
+                    theme = 'red'
+                else:
+                    symbol = self.reader.infoparser.symbols.get(addr)
+                    if symbol:
+                        theme = 'purple'
+                    else:
+                        theme = 'green'
+
+                    name = idc.get_name(addr)
+                    if not name:
+                        if symbol:
+                            name = symbol['name']
+                        else:
+                            name = "proc_%X" % (addr,)
+
+                if addr not in self.colors:
+                    self.colors[addr] = self.new_color(theme)
+
+                self.lines[y].append({
+                    'addr': addr,
+                    'x0': max(0, x - min_x),
+                    'x1': min(max_x, x - min_x + width),
+                    'color': self.colors[addr],
+                    'name': name
+                    })
+
+                children = self.reader.get_children(tree)
+                x_child = x + 1
+                for child in children:
+                    trees.append((child, x_child, y + 1))
+                    x_child += child['size']
+
+        return self.lines
+
 class Canvas(QtWidgets.QWidget):
     def __init__(self):
         super(Canvas, self).__init__()
         self.initUI()
         self.drawing = None
+        self.startX = 0
 
     def initUI(self):
-
-        self.text = "Punten"
-
         # self.setGeometry(300, 300, 280, 170)
-        self.setWindowTitle('Drawing text')
+        self.setWindowTitle('Drawing graph')
         self.show()
 
     def paintEvent(self, event):
@@ -42,11 +122,8 @@ class Canvas(QtWidgets.QWidget):
 
     def drawWidget(self, qp):
         size = self.size()
-        rect = QtCore.QRect(QtCore.QPoint(0, 0), size)
-
-        qp.setPen(QtGui.QColor(168, 34, 3))
+        #rect = QtCore.QRect(QtCore.QPoint(0, 0), size)
         qp.setFont(MonospaceFont())
-        qp.drawText(rect, QtCore.Qt.AlignCenter, self.text)
 
         #metrics = qp.fontMetrics()
         #fw = metrics.width(self.text)
@@ -58,11 +135,12 @@ class Canvas(QtWidgets.QWidget):
         qp.setBrush(QtCore.Qt.NoBrush)
         qp.drawRect(0, 0, size.width()-1, size.height()-1)
 
-        qp.setPen(QtCore.Qt.NoPen)
-        # qp.setBrush(QtGui.QBrush(QtGui.QColor(255, 100, 100)))
+        WIDTH_tree = 20
 
         if self.drawing:
-            lines = self.drawing(0, size.width() - 2)
+            min_x = self.startX
+            max_x = min_x + ((size.width() + WIDTH_tree) / WIDTH_tree)
+            lines = self.drawing.draw(min_x, max_x)
             for y, line in lines.iteritems():
                 for box in line:
                     if box['color']:
@@ -70,14 +148,32 @@ class Canvas(QtWidgets.QWidget):
                         qp.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
                     else:
                         qp.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0)))
-                    w = box['x1'] - box['x0'] + 1
-                    qp.drawRect(1+box['x0'], 1+(y*11), w, 10)
 
+                    w = (box['x1'] - box['x0']) * WIDTH_tree - 1
+                    h = WIDTH_tree - 1
+
+                    x0 = 1+(box['x0'] * WIDTH_tree)
+                    y0 = 1+(y * WIDTH_tree)
+
+                    qp.setPen(QtCore.Qt.NoPen)
+                    rect = QtCore.QRect(x0, y0, w, h)
+                    qp.drawRect(rect)
+
+                    qp.setPen(QtGui.QColor(10, 10, 10))
+                    qp.drawText(rect, QtCore.Qt.AlignLeading, box['name'])
 
     def setDrawing(self, drawing):
         self.drawing = drawing
         self.update()
 
+    def setActiveIndex(self, idx):
+        self.startX = 0
+        self.drawing.activeIndex = idx
+        self.update()
+
+    def setStartX(self, x):
+        self.startX = x
+        self.update()
 
 class Display(idaapi.PluginForm):
     def OnCreate(self, form):
@@ -97,6 +193,7 @@ class Display(idaapi.PluginForm):
 
         self.flamegraph = FlameGraphReader(self.infoparser)
         self.flamegraph.parse()
+
         self.infoparser.flow()
 
         self.canvas = None
@@ -105,6 +202,15 @@ class Display(idaapi.PluginForm):
         self.parent = self.FormToPyQtWidget(form)
         self.PopulateForm()
 
+        drawing = Drawing(self.flamegraph)
+
+        for idx in xrange(0, len(self.flamegraph.roots)):
+            root = self.flamegraph.roots[idx]
+            self._combobox.addItem("%d: %x" % (idx, root['size']), idx)
+            if drawing.activeIndex is None: drawing.activeIndex = idx
+
+        self.canvas.setDrawing(drawing)
+
     def CreateToolbar(self):
         toolbar = QtWidgets.QToolBar()
 
@@ -112,6 +218,7 @@ class Display(idaapi.PluginForm):
             QtGui.QIcon(asset_path('black-left-pointing-double-triangle-with-vertical-bar_23ee.png')),
             ""
         )
+        btn_prev.clicked.connect(self._btn_prev_clicked)
         toolbar.addWidget(btn_prev)
 
         label = QtWidgets.QLabel("Hello from <font color=blue>IDAPython</font>")
@@ -123,6 +230,7 @@ class Display(idaapi.PluginForm):
             QtGui.QIcon(asset_path('black-right-pointing-double-triangle-with-vertical-bar_23ed.png')),
             ""
         )
+        btn_next.clicked.connect(self._btn_next_clicked)
         toolbar.addWidget(btn_next)
 
         btn_trace_color = QtWidgets.QPushButton(
@@ -130,7 +238,6 @@ class Display(idaapi.PluginForm):
             "Trace"
         )
         btn_trace_color.clicked.connect(self._btn_trace_color_clicked)
-
         toolbar.addWidget(btn_trace_color)
 
         btn_clear_color = QtWidgets.QPushButton(
@@ -140,6 +247,13 @@ class Display(idaapi.PluginForm):
         btn_clear_color.clicked.connect(self._btn_clear_color_clicked)
 
         toolbar.addWidget(btn_clear_color)
+
+        combobox = QtWidgets.QComboBox()
+        combobox.setStyleSheet("QComboBox { padding: 0 2ex 0 2ex; }")
+        combobox.activated.connect(self._ui_selection_changed)
+        self._combobox = combobox
+
+        toolbar.addWidget(combobox)
 
         return toolbar
 
@@ -156,8 +270,6 @@ class Display(idaapi.PluginForm):
             self.canvas
         )
         self.parent.setLayout(layout)
-
-        self.canvas.setDrawing(self.flamegraph.draw)
 
     def OnClose(self, form):
         """
@@ -197,3 +309,14 @@ class Display(idaapi.PluginForm):
 
                 idc.set_color(jump_from_pc, idc.CIC_ITEM, col2)
                 idc.AddCodeXref(jump_from_pc, target_pc, flowtype)
+
+    def _ui_selection_changed(self, index):
+        self.canvas.setActiveIndex(self._combobox.itemData(index))
+
+    def _btn_next_clicked(self):
+        x = self.canvas.startX + 10
+        self.canvas.setStartX(x)
+
+    def _btn_prev_clicked(self):
+        x = self.canvas.startX - 10 if self.canvas.startX > 10 else 0
+        self.canvas.setStartX(x)

@@ -167,7 +167,7 @@ class BBTrace(idaapi.plugin_t):
     def run(self, arg):
         if not self.display:
             self.display = Display()
-        self.display.Show("PyQt hello world")
+        self.display.Show("BbTrace Graph")
 
     def interactive_load_file(self):
         """
