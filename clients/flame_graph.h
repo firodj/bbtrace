@@ -4,16 +4,19 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <vector>
 #include "tracelog_reader.h"
 
 class tree_t;
 
 typedef std::map<uint, tree_t*> tree_children_t;
+typedef std::vector<uint> array_uint_t;
 
 class tree_t {
 public:
     tree_t* parent;
     tree_children_t children;
+    array_uint_t children_order;
 
     block_t *start_block;
     block_t *end_block;
@@ -36,6 +39,15 @@ public:
           tree_t *child = kv.second;
           delete child;
       }
+  }
+
+  tree_t *get_child(block_t *_block)
+  {
+    if (children.find(_block->addr) == children.end()) {
+        children[_block->addr] = new tree_t(this, _block);
+        children_order.push_back(_block->addr);
+    }
+    return children[_block->addr];
   }
 };
 
@@ -72,6 +84,7 @@ class FlameGraph{
 private:
     blocks_t blocks_;
     histories_t histories_;
+    array_uint_t histories_order_;
     app_pc_map_t pc_to_pc_;
 
     history_t& GetHistory(uint thread_id)
@@ -79,6 +92,7 @@ private:
         histories_t::iterator it = histories_.find(thread_id);
         if (it == histories_.end()) {
             histories_[thread_id].thread_id = thread_id;
+            histories_order_.push_back(thread_id);
         }
 
         return histories_[thread_id];
@@ -99,10 +113,7 @@ public:
 
     void DoStart2(history_t &history, block_t *block)
     {
-        if (history.last_tree->children.find(block->addr) == history.last_tree->children.end()) {
-            history.last_tree->children[block->addr] = new tree_t(history.last_tree, block);
-        }
-        history.last_tree = history.last_tree->children[block->addr];
+        history.last_tree = history.last_tree->get_child(block);
         history.last_tree->end_block = nullptr;
         history.last_tree->hits++;
     }
@@ -134,12 +145,7 @@ public:
     void DoPush2(history_t &history, block_t *block)
     {
         history.last_tree->end_block = history.last_block;
-
-        if (history.last_tree->children.find(block->addr) == history.last_tree->children.end()) {
-            history.last_tree->children[block->addr] = new tree_t(history.last_tree, block);
-        }
-
-        history.last_tree = history.last_tree->children[block->addr];
+        history.last_tree = history.last_tree->get_child(block);
         history.last_tree->end_block = nullptr;
         history.last_tree->hits++;
     }
@@ -233,8 +239,8 @@ public:
 
         out->write((const char *)&pkt_tree, sizeof(pkt_tree));
 
-        for(auto& kv : tree->children) {
-            tree_t *child = kv.second;
+        for(auto k : tree->children_order) {
+            tree_t *child = tree->children[k];
             OutputTree(out, child, level + 1);
         }
     }
@@ -244,8 +250,8 @@ public:
         std::cout << "Writing: " << filename << std::endl;
         std::ofstream outfile(filename, std::ofstream::binary);
 
-        for (auto& kv : histories_) {
-            history_t &history = kv.second;
+        for (auto k : histories_order_) {
+            history_t &history = histories_[k];
 
             std::cout << "thread id: " << history.thread_id << std::endl;
 
