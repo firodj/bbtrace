@@ -153,6 +153,11 @@ class Canvas(QtWidgets.QWidget):
         self.rows = {}
         self.drawing_lines = {}
 
+        try:
+            current_funcea = idautils.Functions(idaapi.get_screen_ea()).next()
+        except StopIteration:
+            current_funcea = None
+
         if self.drawing:
             min_x = self.startX
             max_x = min_x + ((size.width() + self.WIDTH_tree) / self.WIDTH_tree)
@@ -163,11 +168,17 @@ class Canvas(QtWidgets.QWidget):
                     self.drawing_lines[y] = []
 
                 for box in line:
+                    boxpen = QtCore.Qt.NoPen
+                    if box['addr'] == current_funcea:
+                        boxpen = pen
+
                     if box['color']:
                         r, g, b = box['color']
-                        qp.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
+                        color = QtGui.QColor(r, g, b)
                     else:
-                        qp.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+                        color = QtGui.QColor(0, 0, 0)
+
+                    qp.setBrush(QtGui.QBrush(color))
 
                     w = (box['x1'] - box['x0']) * self.WIDTH_tree - 1
                     h = self.WIDTH_tree - 1
@@ -175,7 +186,7 @@ class Canvas(QtWidgets.QWidget):
                     x0 = 1+(box['x0'] * self.WIDTH_tree)
                     y0 = 1+(y * self.WIDTH_tree)
 
-                    qp.setPen(QtCore.Qt.NoPen)
+                    qp.setPen(boxpen)
                     rect = QtCore.QRect(x0, y0, w, h)
                     qp.drawRect(rect)
 
@@ -187,6 +198,11 @@ class Canvas(QtWidgets.QWidget):
                         'name': box['name'],
                         'addr': box['addr']
                         })
+
+    def mouseDoubleClickEvent(self, event):
+        box = self.itemAt( event.pos() )
+        if box:
+            idaapi.jumpto(box['addr'])
 
     def itemAt(self, point):
         if not self.drawing_lines: return
