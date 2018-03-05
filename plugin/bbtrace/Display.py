@@ -48,7 +48,7 @@ class Drawing:
             x = 50 + int(80 * v1);
             return (r, x ,x)
 
-    def draw(self, min_x, max_x):
+    def draw(self, min_x, max_x, min_y):
         self.lines = {}
 
         root_tree = self.reader.roots[self.activeIndex]
@@ -60,8 +60,6 @@ class Drawing:
             width = tree['size']
 
             if x + width > min_x and x < max_x:
-
-                if y not in self.lines: self.lines[y] = []
 
                 addr = tree['addr']
 
@@ -85,13 +83,18 @@ class Drawing:
                 if addr not in self.colors:
                     self.colors[addr] = self.new_color(theme)
 
-                self.lines[y].append({
-                    'addr': addr,
-                    'x0': max(0, x - min_x),
-                    'x1': min(max_x, x - min_x + width),
-                    'color': self.colors[addr],
-                    'name': name
-                    })
+                if y >= min_y:
+                    this_y = y - min_y
+                    if this_y not in self.lines: self.lines[this_y] = []
+
+                    self.lines[this_y].append({
+                        'addr': addr,
+                        'x0': max(0, x - min_x),
+                        'x1': min(max_x, x - min_x + width),
+                        'color': self.colors[addr],
+                        'name': name,
+                        'cropped': x - min_x < 0
+                        })
 
                 children = self.reader.get_children(tree)
                 x_child = x + 1
@@ -101,6 +104,12 @@ class Drawing:
 
         return self.lines
 
+    def getSize(self):
+        root_tree = self.reader.roots[self.activeIndex]
+        if root_tree:
+            return root_tree['size']
+
+
 class Canvas(QtWidgets.QWidget):
     WIDTH_tree = 20
 
@@ -109,6 +118,7 @@ class Canvas(QtWidgets.QWidget):
         self.initUI()
         self.drawing = None
         self.startX = 0
+        self.startY = 0
         self.drawing_lines = None
 
     def initUI(self):
@@ -145,6 +155,8 @@ class Canvas(QtWidgets.QWidget):
 
         pen = QtGui.QPen(QtGui.QColor(20, 20, 20), 1,
             QtCore.Qt.SolidLine)
+        hilitepen = QtGui.QPen(QtGui.QColor(250, 250, 150), 2,
+            QtCore.Qt.SolidLine)
 
         qp.setPen(pen)
         qp.setBrush(QtCore.Qt.NoBrush)
@@ -161,7 +173,7 @@ class Canvas(QtWidgets.QWidget):
         if self.drawing:
             min_x = self.startX
             max_x = min_x + ((size.width() + self.WIDTH_tree) / self.WIDTH_tree)
-            lines = self.drawing.draw(min_x, max_x)
+            lines = self.drawing.draw(self.startX, max_x, self.startY)
 
             for y, line in lines.iteritems():
                 if y not in self.drawing_lines:
@@ -170,7 +182,7 @@ class Canvas(QtWidgets.QWidget):
                 for box in line:
                     boxpen = QtCore.Qt.NoPen
                     if box['addr'] == current_funcea:
-                        boxpen = pen
+                        boxpen = hilitepen
 
                     if box['color']:
                         r, g, b = box['color']
@@ -193,11 +205,19 @@ class Canvas(QtWidgets.QWidget):
                     qp.setPen(QtGui.QColor(10, 10, 10))
                     qp.drawText(rect, QtCore.Qt.AlignLeading, box['name'])
 
+                    if not box['cropped']:
+                        qp.save()
+                        qp.translate(rect.left() + 1, rect.bottom() + 1)
+                        qp.rotate(90)
+                        qp.drawText(QtCore.QPoint(0, 0), box['name'])
+                        qp.restore()
+
                     self.drawing_lines[y].append({
                         'rect': rect,
                         'name': box['name'],
                         'addr': box['addr']
                         })
+
 
     def mouseDoubleClickEvent(self, event):
         box = self.itemAt( event.pos() )
@@ -229,6 +249,9 @@ class Canvas(QtWidgets.QWidget):
         self.startX = x
         self.update()
 
+    def setStartY(self, y):
+        self.startY = y
+        self.update()
 
 class Display(idaapi.PluginForm):
     def OnCreate(self, form):
@@ -321,9 +344,31 @@ class Display(idaapi.PluginForm):
         )
 
         self.canvas = Canvas()
-        layout.addWidget(
+        self.hscroll = QtWidgets.QScrollBar(QtCore.Qt.Horizontal)
+        self.hscroll.setPageStep(20)
+        self.hscroll.setSingleStep(1)
+        self.hscroll.valueChanged.connect(self._hscroll_moved)
+        self.vscroll = QtWidgets.QScrollBar(QtCore.Qt.Vertical)
+        self.vscroll.setPageStep(4)
+        self.vscroll.setSingleStep(1)
+        self.vscroll.valueChanged.connect(self._vscroll_moved)
+
+        layout2 = QtWidgets.QHBoxLayout()
+
+        layout2.addWidget(
             self.canvas
         )
+        layout2.addWidget(
+            self.vscroll
+        )
+
+        layout.addLayout(
+            layout2
+        )
+        layout.addWidget(
+            self.hscroll
+        )
+
         self.parent.setLayout(layout)
 
     def OnClose(self, form):
@@ -367,6 +412,11 @@ class Display(idaapi.PluginForm):
 
     def _ui_selection_changed(self, index):
         self.canvas.setActiveIndex(self._combobox.itemData(index))
+        size = self.canvas.drawing.getSize()
+        self.hscroll.setRange(0, size)
+        self.hscroll.setValue(0)
+        self.vscroll.setRange(0, 100)
+        self.vscroll.setValue(0)
 
     def _btn_next_clicked(self):
         x = self.canvas.startX + 10
@@ -375,3 +425,9 @@ class Display(idaapi.PluginForm):
     def _btn_prev_clicked(self):
         x = self.canvas.startX - 10 if self.canvas.startX > 10 else 0
         self.canvas.setStartX(x)
+
+    def _hscroll_moved(self, value):
+        self.canvas.setStartX(value)
+
+    def _vscroll_moved(self, value):
+        self.canvas.setStartY(value)
