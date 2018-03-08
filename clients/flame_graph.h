@@ -113,9 +113,16 @@ public:
 
     void DoStart2(history_t &history, block_t *block)
     {
-        history.last_tree = history.last_tree->get_child(block);
-        history.last_tree->end_block = nullptr;
-        history.last_tree->hits++;
+        if (history.last_tree->parent) {
+          history.last_tree->end_block = history.last_block;
+          history.last_tree = history.last_tree->parent->get_child(block);
+          history.last_tree->end_block = nullptr;
+          history.last_tree->hits++;
+        } else {
+          history.last_tree = history.last_tree->get_child(block);
+          history.last_tree->end_block = nullptr;
+          history.last_tree->hits++;
+        }
     }
 
     bool DoPopInto2(history_t &history, block_t *block)
@@ -186,11 +193,11 @@ public:
             if (history.last_block->kind == BLOCK) {
                 if (block->kind == BLOCK) {
                     if (history.last_block->jump == CALL) {
-                        if (block->addr != history.last_block->end) {
+                        if (block->addr == history.last_block->end) {
+                          //
+                        } else {
                             UpdateXref(history, block);
                             DoPush2(history, block);
-                        } else {
-                            DoStart2(history, block);
                         }
                     } else
                     if (history.last_block->jump == RET) {
