@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.9)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 option(test "Build all tests." OFF)
 
@@ -7,9 +9,11 @@ project(bbtrace)
 set (CMAKE_CXX_STANDARD 11)
 
 if (MSVC)
-  add_library(bbtrace_core STATIC clients/bbtrace_core.c clients/branchlut2.cpp)
+  add_library(bbtrace_core STATIC
+      src/bbtrace_core.c src/codecache.c
+      src/synchro.c src/winapi.c)
   target_compile_definitions(bbtrace_core PUBLIC WINDOWS X86_32)
-  target_include_directories(bbtrace_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/clients $ENV{DYNAMORIO_HOME}/include)
+  target_include_directories(bbtrace_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src $ENV{DYNAMORIO_HOME}/include)
 
   find_package(DynamoRIO 6.0)
   if (NOT DynamoRIO_FOUND)
@@ -31,31 +35,12 @@ if (MSVC)
     # drrun.exe -c test_bbtrace.dll -- test_app.exe > ..\tests\test_bbtrace.expect 2>&1
   endif()
 
-  add_library(bbtrace SHARED clients/bbtrace.c)
+  add_library(bbtrace SHARED src/bbtrace.c)
   target_link_libraries(bbtrace bbtrace_core)
 
   configure_DynamoRIO_client(bbtrace)
   use_DynamoRIO_extension(bbtrace drmgr)
   use_DynamoRIO_extension(bbtrace drwrap)
+  use_DynamoRIO_extension(bbtrace drutil)
   use_DynamoRIO_extension(bbtrace drcontainers)
-
-  add_library(instrace SHARED samples/instrace_x86.c samples/utils.c)
-  configure_DynamoRIO_client(instrace)
-  use_DynamoRIO_extension(instrace drcontainers)
-  use_DynamoRIO_extension(instrace drmgr)
-  use_DynamoRIO_extension(instrace drreg)
-  use_DynamoRIO_extension(instrace drx)
-  target_compile_definitions(instrace PUBLIC OUTPUT_TEXT)
-
-  add_library(instrcalls SHARED samples/instrcalls.c samples/utils.c)
-  configure_DynamoRIO_client(instrcalls)
-  use_DynamoRIO_extension(instrcalls drmgr)
-  use_DynamoRIO_extension(instrcalls drsyms)
-  use_DynamoRIO_extension(instrcalls drx)
-endif()
-
-add_executable(bbtrace_util clients/bbtrace_util.cpp)
-if (MSVC)
-  target_compile_definitions(bbtrace_util PUBLIC WINDOWS X86_32)
-  set_target_properties(bbtrace_util PROPERTIES COMPILE_FLAGS "/EHsc /Zi")
 endif()
