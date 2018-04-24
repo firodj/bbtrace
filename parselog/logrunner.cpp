@@ -26,12 +26,8 @@ LogRunner::Open(std::string &filename) {
         info_threads_[main_thread_id].running = true;
     } else {
         std::cout << "Fail to open .bin: " << filename_ << std::endl;
-        info_threads_[0].finished = true;
+        info_threads_[main_thread_id].finished = true;
         return false;
-    }
-
-    if (info_threads_[main_thread_id].finished) {
-        info_threads_.erase(main_thread_id);
     }
 
     it_thread_ = info_threads_.end();

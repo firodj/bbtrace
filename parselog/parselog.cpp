@@ -110,25 +110,27 @@ main(int argc, PCHAR* argv)
     std::signal(SIGINT, signal_handler);
 
     LogRunner runner;
-    runner.Open(filename);
-    for (auto name : opt_procnames)
-        runner.FilterApiCall(name);
-    runner.SetOptions(0);
+    if (runner.Open(filename)) {
+        for (auto name : opt_procnames)
+            runner.FilterApiCall(name);
+        runner.SetOptions(0);
 
-    auto start = std::chrono::system_clock::now();
-    while (runner.Step() && gSignalStatus == 0)
-        ;
-    auto end = std::chrono::system_clock::now();
+        auto start = std::chrono::system_clock::now();
+        while (runner.Step() && gSignalStatus == 0)
+            ;
+        auto end = std::chrono::system_clock::now();
 
+        std::cout << "+++" << std::endl;
+        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end-start);
+        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end-start-minutes);
+
+        std::time_t end_time = std::chrono::system_clock::to_time_t(end);
+        std::cout << "finished at " << std::ctime(&end_time)
+                  << "elapsed time: " << minutes.count() << ":" << seconds.count() << "s" << std::endl;
+
+    }
     std::cout << "===" << std::endl;
     runner.Summary();
-
-    auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end-start);
-    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end-start-minutes);
-
-    std::time_t end_time = std::chrono::system_clock::to_time_t(end);
-    std::cout << "finished at " << std::ctime(&end_time)
-              << "elapsed time: " << minutes.count() << ":" << seconds.count() << "s" << std::endl;
 
     return 0;
 }

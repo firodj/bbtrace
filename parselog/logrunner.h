@@ -19,6 +19,8 @@ private:
     std::vector<std::string> filter_apicall_names_;
 
 public:
+    LogRunner(): bb_count_(0), show_options_(0) {}
+
     bool Open(std::string &filename);
 
     void SetOptions(uint show_options)

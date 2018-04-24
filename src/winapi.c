@@ -28,7 +28,10 @@ static void after_IDirect3DDevice9_EndStateBlock(void *wrapcxt, void *user_data)
 
 static void before_CreateThread(void *wrapcxt, void *user_data);
 static void after_CreateThread(void *wrapcxt, void *user_data);
+static void before_ReadFile(void *wrapcxt, void *user_data);
 static void after_ReadFile(void *wrapcxt, void *user_data);
+static void before_SetFilePointer(void *wrapcxt, void *user_data);
+static void after_SetFilePointer(void *wrapcxt, void *user_data);
 static void after_InitializeCriticalSection(void *wrapcxt, void *user_data);
 static void after_EnterCriticalSection(void *wrapcxt, void *user_data);
 static void before_LeaveCriticalSection(void *wrapcxt, void *user_data);
@@ -57,10 +60,12 @@ static const winapi_info_t winapi_infos[] = {
     {KERNEL32_DLL, "CreateFileA", 7, {A_LPSTR}, A_HANDLE},
     {KERNEL32_DLL, "CloseHandle", 1, {A_HANDLE}, A_BOOL, NULL, after_CloseHandle},
     {KERNEL32_DLL, "GetFileSize", 2, {A_HANDLE, A_LPDWORD}, A_DWORD},
-    {KERNEL32_DLL, "ReadFile", 5, {A_HANDLE, A_LPVOID, A_DWORD, A_LPDWORD}, A_BOOL, NULL, after_ReadFile},
+    {KERNEL32_DLL, "ReadFile", 5, {A_HANDLE, A_LPVOID, A_DWORD, A_LPDWORD}, A_BOOL, before_ReadFile, after_ReadFile},
     {KERNEL32_DLL, "WriteFile", 5, {A_HANDLE, A_LPVOID, A_DWORD, A_LPDWORD}, A_BOOL},
+    {KERNEL32_DLL, "SetFilePointer", 4, {A_HANDLE, A_DWORD, A_LPDWORD, A_DWORD}, A_DWORD, before_SetFilePointer, after_SetFilePointer},
     {KERNEL32_DLL, "VirtualProtect", 4, {A_LPVOID, A_DWORD, A_DWORD, A_LPDWORD}, A_BOOL, NULL, after_VirtualProtect},
     {KERNEL32_DLL, "VirtualAlloc", 4, {A_LPVOID, A_DWORD, A_DWORD, A_DWORD}, A_LPVOID, NULL, after_VirtualAlloc},
+    {KERNEL32_DLL, "VirtualFree", 3, {A_LPVOID, A_DWORD, A_DWORD}, A_BOOL},
     {KERNEL32_DLL, "SetEvent", 1, {A_HANDLE}, A_BOOL, before_ResetEvent, NULL},
     {KERNEL32_DLL, "ResetEvent", 1, {A_HANDLE}, A_BOOL, before_ResetEvent, NULL},
     {KERNEL32_DLL, "CreateEventA", 4, {A_LPVOID, A_BOOL, A_BOOL, A_LPSTR}, A_HANDLE, NULL, after_CreateEvent},
@@ -1058,7 +1063,7 @@ after_VirtualAlloc(void *wrapcxt, void *user_data)
 }
 
 static void
-after_ReadFile(void *wrapcxt, void *user_data)
+before_ReadFile(void *wrapcxt, void *user_data)
 {
     wrap_lib_user_t *p_data = user_data;
 
@@ -1068,8 +1073,53 @@ after_ReadFile(void *wrapcxt, void *user_data)
     buf_item.params[0] = (uint) p_data->args[1];
     // number of bytes to read
     buf_item.params[1] = (uint) p_data->args[2];
+
+    dump_event_data(&buf_item);
+}
+
+static void
+after_ReadFile(void *wrapcxt, void *user_data)
+{
+    wrap_lib_user_t *p_data = user_data;
+
+    buf_event_t buf_item = {0};
+    buf_item.kind = KIND_ARGS;
+
     // number of bytes has been read
-    buf_item.params[2] = p_data->args[3] ? *(uint*)p_data->args[3]: 0;
+    buf_item.params[0] = p_data->args[3] ? *(uint*)p_data->args[3]: 0;
+
+    dump_event_data(&buf_item);
+}
+
+static void
+before_SetFilePointer(void *wrapcxt, void *user_data)
+{
+    wrap_lib_user_t *p_data = user_data;
+
+    buf_event_t buf_item = {0};
+    buf_item.kind = KIND_ARGS;
+
+    // distance
+    buf_item.params[0] = (uint) p_data->args[1];
+    // distance (high)
+    buf_item.params[1] = p_data->args[2] ? *(uint*)p_data->args[2]: 0;
+    // move
+    buf_item.params[2] = (uint) p_data->args[3];
+
+    dump_event_data(&buf_item);
+}
+
+static void
+after_SetFilePointer(void *wrapcxt, void *user_data)
+{
+    wrap_lib_user_t *p_data = user_data;
+
+    buf_event_t buf_item = {0};
+    buf_item.kind = KIND_ARGS;
+
+    // distance (high)
+    buf_item.params[0] = p_data->args[2] ? *(uint*)p_data->args[2]: 0;
+
     dump_event_data(&buf_item);
 }
 
