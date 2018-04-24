@@ -29,7 +29,7 @@
 #define KIND_APP_RET 0x74657241
 // #define KIND_THREAD 0x64726854
 #define KIND_WNDPROC 0x70646E57
-#define KIND_CRITSEC 0x74697243
+// #define KIND_CRITSEC 0x74697243
 #define KIND_ARGS 0x73677241
 #define KIND_BB 0x6B6C6242
 #define KIND_LOOP 0x706F6F4C
@@ -37,6 +37,7 @@
 
 #define SYNC_MUTEX 0x7874754D // 'Mutx'
 #define SYNC_EVENT 0x746E7645 // 'Evnt'
+#define SYNC_CRITSEC 0x74697243
 
 typedef struct _mem_ref_t {
     uint kind;

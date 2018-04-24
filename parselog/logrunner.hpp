@@ -16,6 +16,7 @@ private:
     map_app_pc_string_t symbol_names_;
     map_uint_uint_t thread_id_handles_;
     map_uint_uint_t wait_seqs_; // hmutex / hevent
+    map_uint_uint_t critsec_seqs_; // critsec
     std::map<uint, thread_info_c> info_threads_;
     std::map<uint, thread_info_c>::iterator it_thread_;
     std::string filename_;
@@ -25,15 +26,21 @@ private:
 public:
     bool Open(std::string &filename) {
         filename_ = filename;
+        const uint main_thread_id = 0;
 
-        if (info_threads_[0].logparser.open(filename_.c_str())) {
+        if (info_threads_[main_thread_id].logparser.open(filename_.c_str())) {
             std::cout << "Open:" << filename_ << std::endl;
-            info_threads_[0].running = true;
+            info_threads_[main_thread_id].running = true;
         } else {
             std::cout << "Fail to open .bin: " << filename_ << std::endl;
             info_threads_[0].finished = true;
             return false;
         }
+
+        if (info_threads_[main_thread_id].finished) {
+            info_threads_.erase(main_thread_id);
+        }
+
         it_thread_ = info_threads_.end();
         bb_count_ = 0;
         return true;
@@ -154,10 +161,7 @@ public:
                     // buf_app_ret_t *buf_item = reinterpret_cast<buf_app_ret_t*>(item);
                     break;
                 case KIND_WNDPROC:
-                    // buf_event_t *buf_item = reinterpret_cast<buf_event_t*>(item);
-                    break;
-                case KIND_CRITSEC:
-                    // buf_event_t *buf_item = reinterpret_cast<buf_event_t*>(item);
+                    DoKindWndProc(thread_info, *(buf_event_t*)item);
                     break;
                 case KIND_SYNC:
                     DoKindSync(thread_info, *(buf_event_t*)item);
@@ -276,10 +280,14 @@ public:
         uint wait = buf_sync.params[0];
         uint seq = buf_sync.params[1];
 
-        if (wait_seqs_[wait] == seq - 1) {
-            wait_seqs_[wait] = seq;
+        map_uint_uint_t *p_wait_seqs = &wait_seqs_;
+        if (sync_kind == SYNC_CRITSEC) p_wait_seqs = &critsec_seqs_;
+
+        if ((*p_wait_seqs)[wait] == seq - 1) {
+            (*p_wait_seqs)[wait] = seq;
         } else {
-            if (sync_kind == SYNC_EVENT) {
+            switch (sync_kind) {
+            case SYNC_EVENT:
                 thread_info.hevent_wait = wait;
                 thread_info.hevent_seq = seq;
                 thread_info.running = false;
@@ -288,8 +296,8 @@ public:
                 std::cout << "thread pause - event #" << std::dec << wait
                     << " !" << seq << std::endl;
 #endif
-            }
-            if (sync_kind == SYNC_MUTEX) {
+                break;
+            case SYNC_MUTEX:
                 thread_info.hmutex_wait = wait;
                 thread_info.hmutex_seq = seq;
                 thread_info.running = false;
@@ -298,6 +306,56 @@ public:
                 std::cout << "thread pause - mutex #" << std::dec << wait
                     << " !" << seq << std::endl;
 #endif
+                break;
+            case SYNC_CRITSEC:
+                thread_info.critsec_wait = wait;
+                thread_info.critsec_seq = seq;
+                thread_info.running = false;
+#if 0
+                std::cout << std::dec << thread_info.id << "] ";
+                std::cout << "thread pause - critsec #" << std::dec << wait
+                    << " !" << seq << std::endl;
+#endif
+                break;
+            }
+        }
+    }
+
+    void DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync)
+    {
+        uint wait = buf_sync.params[0];
+        uint seq = buf_sync.params[1];
+
+        if (critsec_seqs_[wait] == seq - 1) {
+            critsec_seqs_[wait] = seq;
+        } else {
+        }
+    }
+
+    void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc)
+    {
+        uint umsg = buf_wndproc.params[0];
+        uint wparam = buf_wndproc.params[1];
+        uint lparam = buf_wndproc.params[2];
+
+#if 0
+        std::cout << std::dec << thread_info.id << "] ";
+        std::cout << "wnd proc (" << std::hex << umsg << ", " << wparam << ", " << lparam
+            << ")" << std::endl;
+#endif
+    }
+
+    void ThreadWaitCritSec(thread_info_c &thread_info)
+    {
+        if (thread_info.critsec_wait) {
+            if (critsec_seqs_[thread_info.critsec_wait] == thread_info.critsec_seq - 1) {
+                critsec_seqs_[thread_info.critsec_wait] = thread_info.critsec_seq;
+#if 0
+                std::cout << std::dec << thread_info.id << "] ";
+                std::cout << "thread continue - event: #" << std::dec << thread_info.critsec_wait << std::endl;
+#endif
+                thread_info.running = true;
+                thread_info.critsec_wait = 0;
             }
         }
     }
@@ -334,6 +392,7 @@ public:
 
     void CheckPending(thread_info_c &thread_info)
     {
+        ThreadWaitCritSec(thread_info);
         ThreadWaitEvent(thread_info);
         ThreadWaitMutex(thread_info);
     }
@@ -437,6 +496,10 @@ public:
                     if (thread_info.hmutex_wait) {
                         std::cout << " mutex #" << thread_info.hmutex_wait << " at " << thread_info.hmutex_seq;
                         std::cout << " of " << wait_seqs_[thread_info.hmutex_wait];
+                    }
+                    if (thread_info.critsec_wait) {
+                        std::cout << " critsec #" << thread_info.critsec_wait << " at " << thread_info.critsec_seq;
+                        std::cout << " of " << critsec_seqs_[thread_info.critsec_wait];
                     }
                 }
                 std::cout << std::endl;

@@ -40,6 +40,7 @@ static void after_WaitForSingleObject(void *wrapcxt, void *user_data);
 static void after_CloseHandle(void *wrapcxt, void *user_data);
 static void after_VirtualProtect(void *wrapcxt, void *user_data);
 static void after_VirtualAlloc(void *wrapcxt, void *user_data);
+static void after_RegisterClassEx(void *wrapcxt, void *user_data);
 
 static void *IDirect3D9_lpVtbl = 0;
 static void *IDirect3DDevice9_lpVtbl = 0;
@@ -72,6 +73,8 @@ static const winapi_info_t winapi_infos[] = {
     {KERNEL32_DLL, "ResumeThread", 1, {A_HANDLE}, A_DWORD, NULL, NULL},
     {KERNEL32_DLL, "SuspendThread", 1, {A_HANDLE}, A_DWORD, NULL, NULL},
     {KERNEL32_DLL, "InitializeCriticalSectionAndSpinCount", 2, {A_LPVOID, A_DWORD}, A_BOOL, NULL, after_InitializeCriticalSection},
+
+    {USER32_DLL, "RegisterClassExA", 1, {A_LPVOID}, A_DWORD, NULL, after_RegisterClassEx},
 
     {D3D9_DLL, "Direct3DCreate9", 1, {A_DWORD}, A_LPVOID, NULL, after_Direct3DCreate9},
     {D3D9_DLL, "IDirect3D9_QueryInterface", 3, {A_LPVOID}, A_HRESULT, NULL, NULL},
@@ -860,9 +863,10 @@ static void after_InitializeCriticalSection(void *wrapcxt, void *user_data)
     uint count = synchro_inc_cs(cs);
 
     buf_event_t buf_item = {0};
-    buf_item.kind = KIND_CRITSEC;
+    buf_item.kind = KIND_SYNC;
     buf_item.params[0] = (uint) cs;
     buf_item.params[1] = count;
+    buf_item.params[2] = SYNC_CRITSEC;
 
     dump_event_data(&buf_item);
 }
@@ -874,9 +878,10 @@ static void after_EnterCriticalSection(void *wrapcxt, void *user_data)
     uint count = synchro_inc_cs(cs);
 
     buf_event_t buf_item = {0};
-    buf_item.kind = KIND_CRITSEC;
+    buf_item.kind = KIND_SYNC;
     buf_item.params[0] = (uint) cs;
     buf_item.params[1] = count;
+    buf_item.params[2] = SYNC_CRITSEC;
 
     dump_event_data(&buf_item);
 }
@@ -888,9 +893,10 @@ static void before_LeaveCriticalSection(void *wrapcxt, void *user_data)
     uint count = synchro_inc_cs(cs);
 
     buf_event_t buf_item = {0};
-    buf_item.kind = KIND_CRITSEC;
+    buf_item.kind = KIND_SYNC;
     buf_item.params[0] = (uint) cs;
     buf_item.params[1] = count;
+    buf_item.params[2] = SYNC_CRITSEC;
 
     dump_event_data(&buf_item);
 }
@@ -1066,3 +1072,19 @@ after_ReadFile(void *wrapcxt, void *user_data)
     buf_item.params[2] = p_data->args[3] ? *(uint*)p_data->args[3]: 0;
     dump_event_data(&buf_item);
 }
+
+static void
+after_RegisterClassEx(void *wrapcxt, void *user_data)
+{
+    wrap_lib_user_t *p_data = user_data;
+
+    WNDCLASSEXA* wndclass = (WNDCLASSEXA*) p_data->args[0];
+    app_pc wndproc = (app_pc) wndclass->lpfnWndProc;
+
+    drwrap_wrap_ex(wndproc, WndProc_entry, NULL,
+        0, DRWRAP_UNWIND_ON_EXCEPTION | DRWRAP_CALLCONV_STDCALL);
+
+    dr_fprintf(get_info_file(), "RegisterClassEx ClassName:%s WndProc:%X\n", wndclass->lpszClassName, wndproc);
+    dr_printf("RegisterClassEx ClassName:%s WndProc:%X\n", wndclass->lpszClassName, wndproc);
+}
+

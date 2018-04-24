@@ -324,6 +324,24 @@ event_module_unload(void *drcontext, const module_data_t *mod)
         iterate_exports(drcontext, mod, false/*remove*/);
 }
 
+/* ------------------------------------------------------------------------- */
+
+void
+WndProc_entry(void *wrapcxt, INOUT void **user_data)
+{
+    void *drcontext = drwrap_get_drcontext(wrapcxt);
+    per_thread_t *thd_data = drmgr_get_tls_field(drcontext, tls_index);
+
+    buf_event_t buf_item = {0};
+    buf_item.kind = KIND_WNDPROC;
+    for (int a=0; a<3; a++) buf_item.params[a] = (uint)drwrap_get_arg(wrapcxt, a+1);
+    DR_ASSERT(sizeof(buf_event_t) % sizeof(mem_ref_t) == 0);
+
+    if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end) memtrace(drcontext);
+    *(buf_event_t*)thd_data->buf_ptr = buf_item;
+    thd_data->buf_ptr += sizeof(buf_event_t);
+}
+
 static void
 event_thread_init(void *drcontext)
 {
@@ -350,19 +368,6 @@ event_thread_init(void *drcontext)
     thd_data->dump_f = dr_open_file(path, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
     dr_fprintf(info_file, "Open dump file: %s\n", path);
     dr_printf("Open dump file: %s\n", path);
-
-    /*
-    buf_event_t buf_item = {0};
-    buf_item.kind = KIND_THREAD;
-    buf_item.params[0] = thread_id;
-    DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_event_t));
-
-    thd_data = drmgr_get_tls_field(drcontext, tls_index);
-    if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
-    *(buf_event_t*)thd_data->buf_ptr = buf_item;
-    thd_data->buf_ptr += sizeof(buf_event_t);
-    */
 }
 
 static void
@@ -1125,6 +1130,7 @@ get_info_file() {
 void
 bbtrace_init(client_id_t id)
 {
+    char path[MAXIMUM_PATH];
     dr_time_t start_time;
     dr_get_time(&start_time);
 
@@ -1136,6 +1142,9 @@ bbtrace_init(client_id_t id)
         start_time.year, start_time.month, start_time.day,
         start_time.hour, start_time.minute, start_time.second
         );
+
+    dr_snprintf(path, sizeof(path), "%s.txt", dump_path);
+    info_file = dr_open_file(path, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
 
     winapi_init();
     synchro_init();

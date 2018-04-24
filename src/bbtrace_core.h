@@ -12,6 +12,7 @@ void add_dynamic_codes(void* start, void *end);
 file_t get_info_file();
 void lib_entry(void *wrapcxt, INOUT void **user_data);
 void lib_exit(void *wrapcxt, INOUT void *user_data);
+void WndProc_entry(void *wrapcxt, INOUT void **user_data);
 
 #ifdef __cplusplus
 }

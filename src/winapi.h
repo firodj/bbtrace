@@ -9,6 +9,7 @@ enum _shared_dll_t {
   DINPUT8_DLL,
   DDRAW_DLL,
   KERNEL32_DLL,
+  USER32_DLL,
   NTDLL_DLL,
   WINMM_DLL,
   WS2_32_DLL,
@@ -33,6 +34,7 @@ static const char * const shared_dll_names[] = {
   "dinput8.dll",
   "ddraw.dll",
   "kernel32.dll",
+  "user32.dll",
   "ntdll.dll",
   "winmm.dll",
   "ws2_32.dll"

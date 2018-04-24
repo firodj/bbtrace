@@ -98,7 +98,6 @@ public:
         case KIND_APP_RET:
             return sizeof(buf_app_ret_t);
         case KIND_WNDPROC:
-        case KIND_CRITSEC:
         case KIND_SYNC:
         case KIND_ARGS:
             return sizeof(buf_event_t);

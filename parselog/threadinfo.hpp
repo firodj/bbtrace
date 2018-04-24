@@ -25,6 +25,8 @@ public:
     uint hevent_seq;
     uint hmutex_wait;
     uint hmutex_seq;
+    uint critsec_wait;
+    uint critsec_seq;
     uint64 filepos;
     app_pc within_bb;
     uint id;
@@ -36,6 +38,7 @@ public:
         finished(false),
         hevent_wait(0),
         hmutex_wait(0),
+        critsec_wait(0),
         apicall_now(nullptr),
         filepos(0),
         within_bb(0),
