@@ -5,6 +5,7 @@
 static hashtable_t cs_table;
 static hashtable_t hmutex_table;
 static hashtable_t hevent_table;
+static void* hevent_lock;
 
 void
 synchro_init(void)
@@ -12,11 +13,13 @@ synchro_init(void)
     hashtable_init(&cs_table, 6, HASH_INTPTR, false);
     hashtable_init(&hmutex_table, 6, HASH_INTPTR, false);
     hashtable_init(&hevent_table, 6, HASH_INTPTR, false);
+    hevent_lock = dr_mutex_create();
 }
 
 void
 synchro_exit(void)
 {
+    dr_mutex_destroy(hevent_lock);
     hashtable_delete(&hevent_table);
     hashtable_delete(&hmutex_table);
     hashtable_delete(&cs_table);
@@ -33,21 +36,23 @@ synchro_inc_cs(void *cs)
 uint
 synchro_inc_hmutex(void *hmutex, uint kind)
 {
+    void *lock = 0;
+
     hashtable_t *table = &hmutex_table;
-    if (kind == SYNC_EVENT) table = &hevent_table;
+
+    if (kind == SYNC_EVENT) {
+        table = &hevent_table;
+        lock = hevent_lock;
+    }
+
+    if (lock) dr_mutex_lock(lock);
 
     uint count = (uint)hashtable_lookup(table, hmutex);
     hashtable_add_replace(table, hmutex, (void*) ++count);
-    return count;
-}
 
-void
-synchro_del_hmutex(void *hmutex)
-{
-    uint count = (uint)hashtable_lookup(&hmutex_table, hmutex);
-    if (count) {
-        hashtable_remove(&hmutex_table, hmutex);
-    }
+    if (lock) dr_mutex_unlock(lock);
+
+    return count;
 }
 
 uint

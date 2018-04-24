@@ -1003,7 +1003,6 @@ after_CloseHandle(void *wrapcxt, void *user_data)
 
         dump_event_data(&buf_item);
     }
-    // synchro_del_hmutex(hmutex);
 }
 
 static void

@@ -10,7 +10,6 @@ void synchro_init(void);
 void synchro_exit(void);
 uint synchro_inc_cs(void *cs);
 uint synchro_inc_hmutex(void *hmutex, uint kind);
-void synchro_del_hmutex(void *hmutex);
 uint synchro_kind_hmutex(void *hmutex);
 
 #ifdef __cplusplus
