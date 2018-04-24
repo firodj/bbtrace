@@ -1,6 +1,5 @@
 #ifdef _MSC_VER
   #include <windows.h>
-  #include "guicon.h"
 #else
   typedef char* PCHAR;
 #endif
@@ -52,23 +51,11 @@ void signal_handler(int signal)
     gSignalStatus = signal;
 }
 
-#ifdef _MSC_VER
-int WINAPI
-WinMain(HINSTANCE hInstance,
-    HINSTANCE hPrevInstance,
-    LPSTR lpCmdLine,
-    int nCmdShow)
-{
-    int argc;
-    PCHAR* argv;
-    RedirectIOToConsole();
-    argv = CommandLineToArgvA(lpCmdLine, &argc);
-    AutoPause auto_pause;
-#else
 int
 main(int argc, PCHAR* argv)
 {
-#endif
+    AutoPause auto_pause;
+
     assert(sizeof(mem_ref_t) == 16);
     assert(sizeof(buf_string_t) == 6*16);
 

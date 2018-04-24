@@ -428,6 +428,16 @@ public:
                 std::cout << std::dec << thread_id << "] thread not finished!";
                 if (thread_info.running) {
                     std::cout << " running";
+                } else {
+                    std::cout << " suspended";
+                    if (thread_info.hevent_wait) {
+                        std::cout << " event #" << thread_info.hevent_wait << " at " << thread_info.hevent_seq;
+                        std::cout << " of " << wait_seqs_[thread_info.hevent_wait];
+                    }
+                    if (thread_info.hmutex_wait) {
+                        std::cout << " mutex #" << thread_info.hmutex_wait << " at " << thread_info.hmutex_seq;
+                        std::cout << " of " << wait_seqs_[thread_info.hmutex_wait];
+                    }
                 }
                 std::cout << std::endl;
 
