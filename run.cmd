@@ -29,6 +29,8 @@ SET ARGS=-c %LOCAL%\bin\Debug\%1.dll -- %Name% %4 %5 %6 %7 %8 %9
 
 :run
 
+del %LOCAL%\bin\Debug\%1.dll.*.EXE.*
+
 pushd %Folder%
 
 echo %cd%
