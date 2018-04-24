@@ -4,7 +4,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 option(test "Build all tests." OFF)
 
-project(bbtrace)
+project(BBTRACE)
 
 set (CMAKE_CXX_STANDARD 11)
 
@@ -49,3 +49,5 @@ if (MSVC)
   use_DynamoRIO_extension(bbtrace drutil)
   use_DynamoRIO_extension(bbtrace drcontainers)
 endif()
+
+add_subdirectory (parselog)
