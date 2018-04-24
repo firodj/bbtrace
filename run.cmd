@@ -5,6 +5,12 @@ IF "%1"=="" (
   GOTO:eof
 )
 
+IF "%1"=="parselog" (
+  echo bin\Debug\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
+  start bin\Debug\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
+  GOTO :eof
+)
+
 IF "%2"=="" (
   (echo Please use `--` then application exe)
   GOTO:eof

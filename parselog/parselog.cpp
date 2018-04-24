@@ -20,11 +20,9 @@
 #include <chrono>
 #include <ctime>
 
-#define WITH_ANALYZER 1
-#define WITH_SEQ 1
-
-#include "logparser.hpp"
-#include "logrunner.hpp"
+#include "logparser.h"
+#include "threadinfo.hpp"
+#include "logrunner.h"
 
 static map_app_pc_string_t g_symbol_names;
 static map_uint_uint_t g_thread_id_handles;
@@ -64,32 +62,11 @@ main(int argc, PCHAR* argv)
         return 1;
     }
 
-#if WITH_ANALYZER
-    std::cout << "WITH ANALYZER, ";
-#else
-    std::cout << "without analyzer, ";
-#endif
-#if WITH_SEQ
-    std::cout << "WITH SEQ, ";
-#else
-    std::cout << "without seq, ";
-#endif
-    std::cout << std::endl;
-
     std::string filename;
 
     uint opt_memtrack = 0;
 
     std::vector<std::string> opt_procnames;
-    std::vector<uint> opt_procaddrs;
-
-    bool show_libcall = true;
-    bool show_appcall = true;
-    bool show_memtrace= true;
-    bool show_synchro = true;
-    bool show_string  = true;
-    bool show_other   = true;
-    bool last_call_shown = true;
 
     for (int a=1; a<argc; a++) {
         char *argn = argv[a];
@@ -102,26 +79,10 @@ main(int argc, PCHAR* argv)
 
         std::string opt_name(argn);
 
-        if (opt_name == "t") {
-            std::cout << "Skimming only" << std::endl;
-            show_libcall = false;
-            show_appcall = false;
-            show_memtrace = false;
-            show_synchro = false;
-            show_other   = false;
-            last_call_shown = false;
-        } else
         if (opt_name == "p") {
             if (++a < argc) {
                 opt_procnames.push_back(argv[a]);
                 std::cout << "Track proc:" << argv[a] << std::endl;
-
-                show_appcall = false;
-                show_memtrace= false;
-                show_synchro = false;
-                show_other   = false;
-                show_string  = false;
-                last_call_shown = false;
             } else {
                 std::cout << "Please provide proc name!" << std::endl;
                 return 1;
@@ -135,23 +96,10 @@ main(int argc, PCHAR* argv)
                     return 1;
                 }
                 std::cout << "Track mem:" << std::hex << opt_memtrack << std::endl;
-
-                show_appcall = false;
-                show_libcall = false;
-                show_synchro = false;
-                show_other   = false;
-                last_call_shown = false;
             } else {
                 std::cout << "Please provide memory addr!" << std::endl;
                 return 1;
             }
-        } else
-        if (opt_name == "1") {
-            show_memtrace   = false;
-            show_other      = false;
-            show_synchro    = true;
-            last_call_shown = false;
-            show_appcall    = false;
         } else {
             std::cout << "Unknown option:" << opt_name << std::endl;
             return 1;
@@ -163,6 +111,8 @@ main(int argc, PCHAR* argv)
 
     LogRunner runner;
     runner.Open(filename);
+    for (auto name : opt_procnames)
+        runner.FilterApiCall(name);
     runner.SetOptions(0);
 
     auto start = std::chrono::system_clock::now();

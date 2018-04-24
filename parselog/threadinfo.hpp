@@ -11,6 +11,7 @@ public:
     std::vector<std::string> retstrings;
     df_apicall_c():
         func(0), ret_addr(0) {}
+    void dump();
 };
 
 class thread_info_c {
