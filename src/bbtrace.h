@@ -7,6 +7,7 @@ extern "C" {
 
 void bbtrace_init(client_id_t id);
 void bbtrace_exit(void);
+file_t get_info_file();
 
 #ifdef __cplusplus
 }
