@@ -1165,6 +1165,11 @@ bbtrace_init(client_id_t id)
     dr_snprintf(path, sizeof(path), "%s.txt", dump_path);
     info_file = dr_open_file(path, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
 
+    drmgr_init();
+    drutil_init();
+    drwrap_init();
+    drwrap_set_global_flags(DRWRAP_NO_FRILLS | DRWRAP_FAST_CLEANCALLS);
+
     winapi_init();
     synchro_init();
 
@@ -1206,6 +1211,10 @@ bbtrace_exit(void)
 
     synchro_exit();
     winapi_exit();
+
+    drwrap_exit();
+    drutil_exit();
+    drmgr_exit();
 
     if (info_file != INVALID_FILE) {
         dr_close_file(info_file);
