@@ -14,7 +14,7 @@ codecache_init(void *clean_call, reg_t back)
     if (code_cache) return;
 
     drcontext  = dr_get_current_drcontext();
-    code_cache = dr_nonheap_alloc(PAGE_SIZE,
+    code_cache = dr_nonheap_alloc(dr_page_size(),
                                   DR_MEMPROT_READ  |
                                   DR_MEMPROT_WRITE |
                                   DR_MEMPROT_EXEC);
@@ -27,16 +27,16 @@ codecache_init(void *clean_call, reg_t back)
     dr_insert_clean_call(drcontext, ilist, where, (void *)clean_call, false, 0);
     /* Encodes the instructions into memory and then cleans up. */
     end = instrlist_encode(drcontext, ilist, code_cache, false);
-    DR_ASSERT((end - code_cache) < PAGE_SIZE);
+    DR_ASSERT((end - code_cache) < dr_page_size());
     instrlist_clear_and_destroy(drcontext, ilist);
     /* set the memory as just +rx now */
-    dr_memory_protect(code_cache, PAGE_SIZE, DR_MEMPROT_READ | DR_MEMPROT_EXEC);
+    dr_memory_protect(code_cache, dr_page_size(), DR_MEMPROT_READ | DR_MEMPROT_EXEC);
 }
 
 void
 codecache_exit(void)
 {
-    dr_nonheap_free(code_cache, PAGE_SIZE);
+    dr_nonheap_free(code_cache, dr_page_size());
 }
 
 app_pc

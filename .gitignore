@@ -1,5 +1,6 @@
 *.pyc
 build/
+build7/
 build_*/
 logs/
 bin/
