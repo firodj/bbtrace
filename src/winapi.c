@@ -28,7 +28,7 @@ static void after_IDirect3DDevice9_EndStateBlock(void *wrapcxt, void *user_data)
 
 static void before_CreateThread(void *wrapcxt, void *user_data);
 static void after_CreateThread(void *wrapcxt, void *user_data);
-static void before_ReadFile(void *wrapcxt, void *user_data);
+static void after_ResumeThread(void *wrapcxt, void *user_data);
 static void after_ReadFile(void *wrapcxt, void *user_data);
 static void before_SetFilePointer(void *wrapcxt, void *user_data);
 static void after_SetFilePointer(void *wrapcxt, void *user_data);
@@ -60,7 +60,7 @@ static const winapi_info_t winapi_infos[] = {
     {KERNEL32_DLL, "CreateFileA", 7, {A_LPSTR}, A_HANDLE},
     {KERNEL32_DLL, "CloseHandle", 1, {A_HANDLE}, A_BOOL, NULL, after_CloseHandle},
     {KERNEL32_DLL, "GetFileSize", 2, {A_HANDLE, A_LPDWORD}, A_DWORD},
-    {KERNEL32_DLL, "ReadFile", 5, {A_HANDLE, A_LPVOID, A_DWORD, A_LPDWORD}, A_BOOL, before_ReadFile, after_ReadFile},
+    {KERNEL32_DLL, "ReadFile", 5, {A_HANDLE, A_LPVOID, A_DWORD, A_LPDWORD}, A_BOOL, NULL, after_ReadFile},
     {KERNEL32_DLL, "WriteFile", 5, {A_HANDLE, A_LPVOID, A_DWORD, A_LPDWORD}, A_BOOL},
     {KERNEL32_DLL, "SetFilePointer", 4, {A_HANDLE, A_DWORD, A_LPDWORD, A_DWORD}, A_DWORD, before_SetFilePointer, after_SetFilePointer},
     {KERNEL32_DLL, "VirtualProtect", 4, {A_LPVOID, A_DWORD, A_DWORD, A_LPDWORD}, A_BOOL, NULL, after_VirtualProtect},
@@ -75,8 +75,8 @@ static const winapi_info_t winapi_infos[] = {
     {KERNEL32_DLL, "HeapCreate", 3, {A_DWORD, A_DWORD, A_DWORD}, A_HANDLE},
     {KERNEL32_DLL, "HeapFree", 3, {A_HANDLE, A_DWORD, A_LPVOID}, A_BOOL},
     {KERNEL32_DLL, "CreateThread", 6, {A_DWORD, A_DWORD, A_DWORD, A_LPVOID, A_DWORD, A_LPDWORD}, A_HANDLE, before_CreateThread, after_CreateThread},
-    {KERNEL32_DLL, "ResumeThread", 1, {A_HANDLE}, A_DWORD, NULL, NULL},
-    {KERNEL32_DLL, "SuspendThread", 1, {A_HANDLE}, A_DWORD, NULL, NULL},
+    {KERNEL32_DLL, "ResumeThread", 1, {A_HANDLE}, A_DWORD, NULL, after_ResumeThread},
+    {KERNEL32_DLL, "SuspendThread", 1, {A_HANDLE}, A_DWORD, NULL, after_ResumeThread},
     {KERNEL32_DLL, "InitializeCriticalSectionAndSpinCount", 2, {A_LPVOID, A_DWORD}, A_BOOL, NULL, after_InitializeCriticalSection},
 
     {USER32_DLL, "RegisterClassExA", 1, {A_LPVOID}, A_DWORD, NULL, after_RegisterClassEx},
@@ -861,6 +861,20 @@ after_CreateThread(void *wrapcxt, void *user_data)
     dump_event_data(&buf_item);
 }
 
+static void
+after_ResumeThread(void *wrapcxt, void *user_data)
+{
+    wrap_lib_user_t *p_data = user_data;
+    buf_event_t buf_item = {0};
+    buf_item.kind = KIND_ARGS;
+
+    HANDLE hThread = p_data->args[0];
+    // thread id
+    buf_item.params[0] = GetThreadId(hThread);
+
+    dump_event_data(&buf_item);
+}
+
 static void after_InitializeCriticalSection(void *wrapcxt, void *user_data)
 {
     wrap_lib_user_t *p_data = user_data;
@@ -1063,21 +1077,6 @@ after_VirtualAlloc(void *wrapcxt, void *user_data)
 }
 
 static void
-before_ReadFile(void *wrapcxt, void *user_data)
-{
-    wrap_lib_user_t *p_data = user_data;
-
-    buf_event_t buf_item = {0};
-    buf_item.kind = KIND_ARGS;
-    // buffer
-    buf_item.params[0] = (uint) p_data->args[1];
-    // number of bytes to read
-    buf_item.params[1] = (uint) p_data->args[2];
-
-    dump_event_data(&buf_item);
-}
-
-static void
 after_ReadFile(void *wrapcxt, void *user_data)
 {
     wrap_lib_user_t *p_data = user_data;
@@ -1085,8 +1084,12 @@ after_ReadFile(void *wrapcxt, void *user_data)
     buf_event_t buf_item = {0};
     buf_item.kind = KIND_ARGS;
 
+    // buffer
+    buf_item.params[0] = (uint) p_data->args[1];
+    // number of bytes to read
+    buf_item.params[1] = (uint) p_data->args[2];
     // number of bytes has been read
-    buf_item.params[0] = p_data->args[3] ? *(uint*)p_data->args[3]: 0;
+    buf_item.params[2] = p_data->args[3] ? *(uint*)p_data->args[3]: 0;
 
     dump_event_data(&buf_item);
 }

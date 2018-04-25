@@ -229,8 +229,6 @@ LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret)
 
     thread_info.apicall_now = &thread_info.apicalls.back();
     thread_info.apicall_now->retargs.push_back((uint)buf_libret.retval);
-
-    // librets.push_back(libret_last);
 }
 
 void
@@ -427,6 +425,9 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
     } else
     if (apicall_ret.name == "ResumeThread") {
         OnResumeThread(apicall_ret);
+    } else
+    if (apicall_ret.name == "CloseHandle") {
+        OnCloseHandle(apicall_ret);
     }
 
     for (auto filter_addr : filter_apicall_addrs_) {
@@ -450,15 +451,13 @@ LogRunner::DoEndBB(thread_info_c &thread_info /* , bb mem read/write */)
 void
 LogRunner::OnCreateThread(df_apicall_c &apicall)
 {
-    uint new_handle = apicall.retargs[0];
     uint new_thread_id = apicall.retargs[1];
     bool new_suspended = (apicall.callargs[3] & 0x4) == 0x4;
 
-    if (thread_id_handles_.find(new_handle) != thread_id_handles_.end()) {
-        std::cout << "Already created thread id? " << new_thread_id << std::endl;
+    if (info_threads_.find(new_thread_id) != info_threads_.end()) {
+        std::cout << "Already created with thread id? "
+            << std::dec << new_thread_id << std::endl;
     } else if (new_thread_id) {
-        thread_id_handles_[new_handle] = new_thread_id;
-
         std::ostringstream oss;
         oss << filename_ << "." << std::dec << new_thread_id;
 
@@ -488,16 +487,19 @@ LogRunner::OnCreateThread(df_apicall_c &apicall)
 void
 LogRunner::OnResumeThread(df_apicall_c &apicall)
 {
-    uint new_handle = apicall.callargs[0];
-    if (thread_id_handles_.find(new_handle) != thread_id_handles_.end()) {
-        uint resume_thread_id = thread_id_handles_[new_handle];
-        if (info_threads_.find(resume_thread_id) != info_threads_.end()) {
-            info_threads_[resume_thread_id].running = true;
+    uint resume_thread_id = apicall.retargs[1];
+    if (info_threads_.find(resume_thread_id) != info_threads_.end()) {
+        info_threads_[resume_thread_id].running = true;
 
-            std::cout << std::dec << resume_thread_id << "] ";
-            std::cout << "thread resuming." << std::endl;
-        }
+        std::cout << std::dec << resume_thread_id << "] ";
+        std::cout << "thread resuming." << std::endl;
     }
+}
+
+void
+LogRunner::OnCloseHandle(df_apicall_c &apicall)
+{
+    uint handle = apicall.callargs[0];
 }
 
 void

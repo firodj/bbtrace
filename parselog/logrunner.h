@@ -7,7 +7,6 @@ class LogRunner
 {
 private:
     map_app_pc_string_t symbol_names_;
-    map_uint_uint_t thread_id_handles_;
     map_uint_uint_t wait_seqs_; // hmutex / hevent
     map_uint_uint_t critsec_seqs_; // critsec
     std::map<uint, thread_info_c> info_threads_;
@@ -57,6 +56,7 @@ public:
     void DoEndBB(thread_info_c &thread_info /* , bb mem read/write */);
     void OnCreateThread(df_apicall_c &apicall);
     void OnResumeThread(df_apicall_c &apicall);
+    void OnCloseHandle(df_apicall_c &apicall);
 
     void Summary();
 

@@ -48,6 +48,11 @@ if (MSVC)
   use_DynamoRIO_extension(bbtrace drwrap)
   use_DynamoRIO_extension(bbtrace drutil)
   use_DynamoRIO_extension(bbtrace drcontainers)
+
+  if (CMAKE_BUILD_TYPE STREQUAL Debug)
+  else()
+    set_target_properties(bbtrace PROPERTIES LINK_FLAGS /INCREMENTAL:NO)
+  endif()
 endif()
 
 add_subdirectory (parselog)
