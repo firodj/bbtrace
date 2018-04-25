@@ -39,6 +39,12 @@
 #define SYNC_EVENT 0x746E7645 // 'Evnt'
 #define SYNC_CRITSEC 0x74697243
 
+enum {
+    LINK_JMP = 0,
+    LINK_CALL,
+    LINK_RETURN
+};
+
 typedef struct _mem_ref_t {
     uint kind;
     uint addr;

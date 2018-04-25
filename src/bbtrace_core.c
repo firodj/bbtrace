@@ -699,6 +699,30 @@ instrument_bb(void *drcontext, instrlist_t *ilist, instr_t *where, void *user_da
 
     if (where != (instr_t*)user_data/* first_instr */) return;
 
+    instr_t* last_instr = instrlist_last_app(ilist);
+    app_pc last_pc = instr_get_app_pc(last_instr);
+    uint len_last_instr = instr_length(drcontext, last_instr);
+
+    /* https://github.com/DynamoRIO/dynamorio/blob/release_6_2_0/core/arch/x86/instr.c#L292 */
+    switch (instr_get_opcode(last_instr)) {
+        case OP_call:
+        case OP_call_ind:
+        case OP_call_far:
+        case OP_call_far_ind:
+            len_last_instr |= (LINK_CALL << 8);
+            break;
+        case OP_ret:
+        case OP_ret_far:
+        case OP_iret:
+            len_last_instr |= (LINK_RETURN << 8);
+            break;
+        case OP_int:
+        case OP_int3:
+        case OP_into:
+        default:
+            len_last_instr |= (LINK_JMP << 8);
+    }
+
     code_cache = codecache_get();
     pc = instr_get_app_pc(where);
 
@@ -716,21 +740,21 @@ instrument_bb(void *drcontext, instrlist_t *ilist, instr_t *where, void *user_da
     instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(ilist, where, instr);
 
-    /* Set kind */
+    /* Store kind */
     opnd1 = OPND_CREATE_MEM32(reg2, offsetof(mem_ref_t, kind));
     opnd2 = OPND_CREATE_INT32(KIND_BB);
     instr = INSTR_CREATE_mov_imm(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(ilist, where, instr);
 
-    /* Store address in memory ref */
+    /* Store last pc */
     opnd1 = OPND_CREATE_MEMPTR(reg2, offsetof(mem_ref_t, addr));
-    opnd2 = OPND_CREATE_INT32(0);
+    opnd2 = OPND_CREATE_INT32(last_pc);
     instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(ilist, where, instr);
 
-    /* Store size in memory ref */
+    /* Store about last instr */
     opnd1 = OPND_CREATE_MEMPTR(reg2, offsetof(mem_ref_t, size));
-    opnd2 = OPND_CREATE_INT32(0);
+    opnd2 = OPND_CREATE_INT32(len_last_instr);
     instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(ilist, where, instr);
 
@@ -975,11 +999,6 @@ event_bb_analysis(void *drcontext,
     *user_data = NULL;
 
     if (is_from_exe(pc, true)) {
-#if 0
-        instr_t* last_instr = instrlist_last_app(bb);
-        app_pc last_pc = instr_get_app_pc(last_instr);
-        app_pc end = last_pc + instr_length(drcontext, last_instr);
-#endif
         *user_data = first_instr;
     } else if (is_dynamic_code(pc)) {
         *user_data = first_instr;
