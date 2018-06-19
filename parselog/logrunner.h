@@ -56,6 +56,7 @@ public:
     void DoEndBB(thread_info_c &thread_info /* , bb mem read/write */);
     void OnCreateThread(df_apicall_c &apicall);
     void OnResumeThread(df_apicall_c &apicall);
+    void OnCreateFile(df_apicall_c &apicall);
     void OnCloseHandle(df_apicall_c &apicall);
 
     void Summary();
@@ -68,4 +69,10 @@ public:
     {
         filter_apicall_names_.push_back(name);
     }
+
+    void SaveSymbols(std::ostream &out);
+    void SaveState(std::ostream &out);
+
+    void RestoreSymbols(std::istream &in);
+    // void RestoreState(std::istream &in);
 };

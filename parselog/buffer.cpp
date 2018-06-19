@@ -56,7 +56,7 @@ buffer_c::fetch(uint64 *inpos) {
     if (size == 0) return NULL;
     if (pos_ + size > available_) return NULL;
     char *buf_item = data();
-    if (inpos) *inpos = inpos_ + pos_;
+    if (inpos) *inpos = inpos_ + pos_ + size; // tell next pos
     pos_ += size;
     return buf_item;
 }

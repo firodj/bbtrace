@@ -120,6 +120,21 @@ main(int argc, PCHAR* argv)
             ;
         auto end = std::chrono::system_clock::now();
 
+        {
+            std::ofstream fsymb;
+            fsymb.open("_symbols.bin", std::ofstream::out | std::ofstream::binary);
+            std::cout << "Writing to _symbols.bin" << std::endl;
+            runner.SaveSymbols(fsymb);
+        }
+
+        {
+            std::ifstream fsymb;
+            fsymb.open("_symbols.bin", std::ofstream::in | std::ofstream::binary);
+            runner.RestoreSymbols(fsymb);
+        }
+
+        runner.SaveState(std::cout);
+
         std::cout << "+++" << std::endl;
         auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end-start);
         auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end-start-minutes);

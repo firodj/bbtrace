@@ -394,9 +394,9 @@ LogRunner::ThreadWaitMutex(thread_info_c &thread_info)
 }
 
 void
-df_apicall_c::dump()
+df_apicall_c::Dump()
 {
-    std::cout << "call " << name << "( ";
+    std::cout << "call " << name << "@" << func << "( ";
     for (auto carg: callargs) {
         std::cout << std::dec << carg << ", ";
     }
@@ -420,20 +420,19 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
     thread_info.apicalls.pop_back();
     thread_info.apicall_now = nullptr;
 
-    if (apicall_ret.name == "CreateThread") {
+    if (apicall_ret.name == "CreateFileA")
+        OnCreateFile(apicall_ret);
+    else if (apicall_ret.name == "CreateThread")
         OnCreateThread(apicall_ret);
-    } else
-    if (apicall_ret.name == "ResumeThread") {
-        OnResumeThread(apicall_ret);
-    } else
-    if (apicall_ret.name == "CloseHandle") {
+    else if (apicall_ret.name == "CloseHandle")
         OnCloseHandle(apicall_ret);
-    }
+    else if (apicall_ret.name == "ResumeThread")
+        OnResumeThread(apicall_ret);
 
     for (auto filter_addr : filter_apicall_addrs_) {
         if (filter_addr == apicall_ret.func) {
             std::cout << std::dec << thread_info.id << "] ";
-            apicall_ret.dump();
+            apicall_ret.Dump();
         }
     }
 }
@@ -497,6 +496,15 @@ LogRunner::OnResumeThread(df_apicall_c &apicall)
 }
 
 void
+LogRunner::OnCreateFile(df_apicall_c &apicall)
+{
+    std::string filename = apicall.callstrings[0];
+    uint handle = apicall.retargs[0];
+
+    std::cout << "file " << filename << " = " << handle << std::endl;
+}
+
+void
 LogRunner::OnCloseHandle(df_apicall_c &apicall)
 {
     uint handle = apicall.callargs[0];
@@ -537,3 +545,111 @@ LogRunner::Summary()
 
     std::cout << "bb count: " << bb_count_ << std::endl;
 }
+
+void thread_info_c::Dump()
+{
+    std::cout << "id: " << id << std::endl;
+    std::cout << "running: " << running << std::endl;
+    std::cout << "finished: " << finished << std::endl;
+
+    std::cout << "last_kind: " << last_kind;
+    if (last_kind)
+        std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
+    std::cout << std::endl;
+
+    std::cout << "hevent_wait: " << hevent_wait << std::endl;
+    std::cout << "hevent_seq: " << hevent_seq << std::endl;
+    std::cout << "hmutex_wait: " << hmutex_wait << std::endl;
+    std::cout << "hmutex_seq: " << hmutex_seq << std::endl;
+    std::cout << "critsec_wait: " << critsec_wait << std::endl;
+    std::cout << "critsec_seq: " << critsec_seq << std::endl;
+    std::cout << "filepos: " << filepos << std::endl;
+    std::cout << "within_bb: " << within_bb << std::endl;
+    std::cout << "bb_count: " << bb_count << std::endl;
+
+    int j = -1;
+    for (uint i = 0; i < apicalls.size(); ++i) {
+        df_apicall_c &apicall_cur = apicalls[i];
+        std::cout << "apicalls[" << i << "]: ";
+        apicall_cur.Dump();
+
+        if (apicall_now == &apicall_cur) j = i;
+    }
+    std::cout << "apicall_now: " << std::dec << j << std::endl;
+}
+
+void
+LogRunner::SaveSymbols(std::ostream &out)
+{
+    out << "symb";
+    uint32_t u32 = symbol_names_.size();
+    std::string str;
+
+    out.write((const char*)&u32, sizeof(u32));
+    for (auto it : symbol_names_) {
+        u32 = it.first;
+        out.write((const char*)&u32, sizeof(u32));
+        str = it.second;
+        if (str.size() > 255) str.resize(255);
+        u32 = str.size();
+        out.put((char)u32);
+        out.write(str.c_str(), u32);
+    }
+}
+
+void
+LogRunner::RestoreSymbols(std::istream &in)
+{
+    uint32_t u32 = 0;
+    int current = in.tellg();
+    in.read((char*)&u32, sizeof(u32));
+
+    if (u32 != 0x626D7973) {
+        in.seekg(current);
+        return;
+    }
+
+    in.read((char*)&u32, sizeof(u32));
+
+    symbol_names_.clear();
+
+    for(int i = u32; i; i--) {
+        in.read((char*)&u32, sizeof(u32));
+        uint32_t addr = u32;
+
+        char strpas[256];
+        strpas[0] = in.get();
+        in.read(&strpas[1], strpas[0]);
+
+        //std::string str(&strpas[1], strpas[0]);
+        // std::cout << " " << str << std::endl;
+
+        symbol_names_[addr].assign(&strpas[1], strpas[0]);
+
+        std::cout << "symbol_names " << std::hex << addr << " " << symbol_names_[addr] << std::endl;
+    }
+}
+
+void
+LogRunner::SaveState(std::ostream &out)
+{
+    for (auto it : wait_seqs_) {
+        std::cout << "wait_seqs_, " << it.first << ": " <<it.second << std::endl;
+    }
+
+    for (auto it : critsec_seqs_) {
+        std::cout << "critsec_seqs_, " << it.first << ": " <<it.second << std::endl;
+    }
+
+    std::cout << "bb_count_: " << bb_count_ <<  std::endl;
+    std::cout << "it_thread_: " << it_thread_->first <<  std::endl;
+
+    for (auto it = info_threads_.begin(); it != info_threads_.end(); ++it) {
+        uint thread_id = it->first;
+        thread_info_c &thread_info = it->second;
+
+        std::cout << "info_threads_, id: " << thread_id;
+        thread_info.Dump();
+    }
+}
+

@@ -11,7 +11,7 @@ public:
     std::vector<std::string> retstrings;
     df_apicall_c():
         func(0), ret_addr(0) {}
-    void dump();
+    void Dump();
 };
 
 class thread_info_c {
@@ -31,7 +31,6 @@ public:
     uint64 filepos;
     app_pc within_bb;
     uint id;
-    std::string last_call_name; // DELETE ME
     uint bb_count;
 
     thread_info_c():
@@ -46,6 +45,8 @@ public:
         id(0),
         bb_count(0),
         last_kind(KIND_NONE) {}
+
+    void Dump();
 };
 
 typedef std::map<uint, thread_info_c> map_thread_info_t;
