@@ -4,9 +4,6 @@
   typedef char* PCHAR;
 #endif
 
-#define WITHOUT_DR
-#include "datatypes.h"
-
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -20,14 +17,8 @@
 #include <chrono>
 #include <ctime>
 
-#include "logparser.h"
-#include "threadinfo.hpp"
 #include "logrunner.h"
 
-static map_app_pc_string_t g_symbol_names;
-static map_uint_uint_t g_thread_id_handles;
-static map_uint_uint_t g_wait_seqs; // hmutex / hevent
-static map_thread_info_t g_info_threads;
 volatile std::sig_atomic_t gSignalStatus;
 
 class AutoPause {

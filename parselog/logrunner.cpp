@@ -2,15 +2,10 @@
 #include <fstream>
 #include <sstream>
 #include <string>
- #include <map>
- #include <vector>
+#include <map>
+#include <vector>
 #include <stdexcept>   // for exception, runtime_error, out_of_range
 
-#define WITHOUT_DR
-#include "datatypes.h"
-
-#include "logparser.h"
-#include "threadinfo.hpp"
 #include "logrunner.h"
 #include "serializer.h"
 

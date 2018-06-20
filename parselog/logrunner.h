@@ -1,5 +1,11 @@
 #pragma once
 
+#define WITHOUT_DR
+#include "datatypes.h"
+
+#include "logparser.h"
+#include "threadinfo.hpp"
+
 typedef std::map<uint, uint> map_uint_uint_t;
 typedef std::map<app_pc, std::string> map_app_pc_string_t;
 
@@ -17,6 +23,17 @@ private:
     std::vector<uint> filter_apicall_addrs_;
     std::vector<std::string> filter_apicall_names_;
 
+protected:
+    virtual void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
+    void DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym);
+    void DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall);
+    void DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret);
+    void DoKindArgs(thread_info_c &thread_info, buf_event_t &buf_args);
+    void DoKindString(thread_info_c &thread_info, buf_string_t &buf_str);
+    void DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync);
+    void DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync);
+    void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
+
 public:
     LogRunner(): bb_count_(0), show_options_(0) {}
 
@@ -31,15 +48,6 @@ public:
 
     bool Step();
 
-    void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
-    void DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym);
-    void DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall);
-    void DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret);
-    void DoKindArgs(thread_info_c &thread_info, buf_event_t &buf_args);
-    void DoKindString(thread_info_c &thread_info, buf_string_t &buf_str);
-    void DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync);
-    void DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync);
-    void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
     void ThreadWaitCritSec(thread_info_c &thread_info);
     void ThreadWaitEvent(thread_info_c &thread_info);
     void ThreadWaitMutex(thread_info_c &thread_info);
