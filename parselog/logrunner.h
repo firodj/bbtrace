@@ -33,6 +33,7 @@ protected:
     void DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
+    virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
 
 public:
     LogRunner(): bb_count_(0), show_options_(0) {}
@@ -64,8 +65,6 @@ public:
     void DoEndBB(thread_info_c &thread_info /* , bb mem read/write */);
     void OnCreateThread(df_apicall_c &apicall);
     void OnResumeThread(df_apicall_c &apicall);
-    void OnCreateFile(df_apicall_c &apicall);
-    void OnCloseHandle(df_apicall_c &apicall);
 
     void Summary();
 

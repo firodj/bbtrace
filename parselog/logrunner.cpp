@@ -415,27 +415,29 @@ df_apicall_c::Dump()
 }
 
 void
+LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
+{
+    for (auto filter_addr : filter_apicall_addrs_) {
+        if (filter_addr == apicall_ret.func) {
+            std::cout << std::dec << thread_id << "] ";
+            apicall_ret.Dump();
+        }
+    }
+}
+
+void
 LogRunner::ApiCallRet(thread_info_c &thread_info)
 {
     df_apicall_c apicall_ret = *thread_info.apicall_now;
     thread_info.apicalls.pop_back();
     thread_info.apicall_now = nullptr;
 
-    if (apicall_ret.name == "CreateFileA")
-        OnCreateFile(apicall_ret);
-    else if (apicall_ret.name == "CreateThread")
+    if (apicall_ret.name == "CreateThread")
         OnCreateThread(apicall_ret);
-    else if (apicall_ret.name == "CloseHandle")
-        OnCloseHandle(apicall_ret);
     else if (apicall_ret.name == "ResumeThread")
         OnResumeThread(apicall_ret);
 
-    for (auto filter_addr : filter_apicall_addrs_) {
-        if (filter_addr == apicall_ret.func) {
-            std::cout << std::dec << thread_info.id << "] ";
-            apicall_ret.Dump();
-        }
-    }
+    OnApiCall(thread_info.id, apicall_ret);
 }
 
 void
@@ -495,22 +497,6 @@ LogRunner::OnResumeThread(df_apicall_c &apicall)
         std::cout << "thread resuming." << std::endl;
     }
 }
-
-void
-LogRunner::OnCreateFile(df_apicall_c &apicall)
-{
-    std::string filename = apicall.callstrings[0];
-    uint handle = apicall.retargs[0];
-
-    std::cout << "file " << filename << " = " << handle << std::endl;
-}
-
-void
-LogRunner::OnCloseHandle(df_apicall_c &apicall)
-{
-    uint handle = apicall.callargs[0];
-}
-
 void
 LogRunner::Summary()
 {
