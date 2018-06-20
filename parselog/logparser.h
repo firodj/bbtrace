@@ -10,6 +10,10 @@ private:
 
 public:
     bool open(const char* filename);
-    char* fetch(uint64 *filepos = nullptr);
-    uint peek(uint64 *filepos = nullptr);
+    char* fetch();
+    uint peek();
+    void seek(uint64 filepos);
+    uint64 tell();
+
+    std::string filename() { return filename_; };
 };

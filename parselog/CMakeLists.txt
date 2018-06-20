@@ -13,6 +13,7 @@ add_library(parselog_core STATIC
     buffer.cpp
     logparser.cpp
     logrunner.cpp
+    serializer.cpp
 )
 if (MSVC)
   set_target_properties(parselog_core PROPERTIES COMPILE_FLAGS "/EHsc /Zi")

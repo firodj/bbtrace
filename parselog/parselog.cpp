@@ -65,6 +65,7 @@ main(int argc, PCHAR* argv)
     std::string filename;
 
     uint opt_memtrack = 0;
+    bool opt_input_state = false;
 
     std::vector<std::string> opt_procnames;
 
@@ -100,6 +101,17 @@ main(int argc, PCHAR* argv)
                 std::cout << "Please provide memory addr!" << std::endl;
                 return 1;
             }
+        } else
+        if (opt_name == "i") {
+            opt_input_state = true;
+            /*
+            if (++a < argc) {
+                argv[a];
+            } else {
+                std::cout << "Please provide running state";
+                return 1;
+            }
+            */
         } else {
             std::cout << "Unknown option:" << opt_name << std::endl;
             return 1;
@@ -111,6 +123,21 @@ main(int argc, PCHAR* argv)
 
     LogRunner runner;
     if (runner.Open(filename)) {
+        if (opt_input_state) {
+            {
+                std::ifstream fsymb;
+                fsymb.open("_symbols.bin", std::ofstream::in | std::ofstream::binary);
+                std::cout << "Reading from _symbols.bin" << std::endl;
+                runner.RestoreSymbols(fsymb);
+            }
+            {
+                std::ifstream frun;
+                frun.open("_runs.bin", std::ofstream::in | std::ofstream::binary);
+                std::cout << "Reading from _runs.bin" << std::endl;
+                runner.RestoreState(frun);
+            }
+        }
+
         for (auto name : opt_procnames)
             runner.FilterApiCall(name);
         runner.SetOptions(0);
@@ -120,20 +147,23 @@ main(int argc, PCHAR* argv)
             ;
         auto end = std::chrono::system_clock::now();
 
-        {
-            std::ofstream fsymb;
-            fsymb.open("_symbols.bin", std::ofstream::out | std::ofstream::binary);
-            std::cout << "Writing to _symbols.bin" << std::endl;
-            runner.SaveSymbols(fsymb);
-        }
+        if (gSignalStatus) {
+            {
+                std::ofstream fsymb;
+                fsymb.open("_symbols.bin", std::ofstream::out | std::ofstream::binary);
+                std::cout << "Writing to _symbols.bin" << std::endl;
+                runner.SaveSymbols(fsymb);
+            }
 
-        {
-            std::ifstream fsymb;
-            fsymb.open("_symbols.bin", std::ofstream::in | std::ofstream::binary);
-            runner.RestoreSymbols(fsymb);
-        }
+            {
+                std::ofstream frun;
+                frun.open("_runs.bin", std::ofstream::out | std::ofstream::binary);
+                std::cout << "Writing to _runs.bin" << std::endl;
+                runner.SaveState(frun);
+            }
 
-        runner.SaveState(std::cout);
+            gSignalStatus = 0;
+        }
 
         std::cout << "+++" << std::endl;
         auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end-start);

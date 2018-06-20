@@ -12,6 +12,7 @@
 #include "logparser.h"
 #include "threadinfo.hpp"
 #include "logrunner.h"
+#include "serializer.h"
 
 #define LR_SHOW_BB 0x1
 #define LR_SHOW_LIBCALL 0x2
@@ -71,12 +72,15 @@ LogRunner::Step()
             break;
     }
 
-    if (inactive == info_threads_.size())
+    if (inactive == info_threads_.size()) {
         return false;
+    }
 
     uint thread_id = it_thread_->first;
     thread_info_c &thread_info = it_thread_->second;
     auto it_current = it_thread_++;
+    if (it_thread_ == info_threads_.end())
+        it_thread_ = info_threads_.begin();
 
     while (thread_info.running) {
         uint kind;
@@ -102,7 +106,9 @@ LogRunner::Step()
         }
 
         // Consume kind
-        char *item = thread_info.logparser.fetch(&thread_info.filepos);
+        char *item = thread_info.logparser.fetch();
+        thread_info.filepos = thread_info.logparser.tell();
+
         if (!item) {
             FinishThread(thread_info);
             info_threads_.erase(it_current);
@@ -582,74 +588,310 @@ void
 LogRunner::SaveSymbols(std::ostream &out)
 {
     out << "symb";
-    uint32_t u32 = symbol_names_.size();
-    std::string str;
 
-    out.write((const char*)&u32, sizeof(u32));
+    write_u32(out, symbol_names_.size());
+
     for (auto it : symbol_names_) {
-        u32 = it.first;
-        out.write((const char*)&u32, sizeof(u32));
-        str = it.second;
-        if (str.size() > 255) str.resize(255);
-        u32 = str.size();
-        out.put((char)u32);
-        out.write(str.c_str(), u32);
+        write_u32(out, it.first);
+        write_str(out, it.second);
     }
 }
 
 void
 LogRunner::RestoreSymbols(std::istream &in)
 {
-    uint32_t u32 = 0;
-    int current = in.tellg();
-    in.read((char*)&u32, sizeof(u32));
-
-    if (u32 != 0x626D7973) {
-        in.seekg(current);
-        return;
-    }
-
-    in.read((char*)&u32, sizeof(u32));
-
+    if (!read_match(in, "symb")) return;
     symbol_names_.clear();
 
-    for(int i = u32; i; i--) {
-        in.read((char*)&u32, sizeof(u32));
-        uint32_t addr = u32;
+    for(int i = read_u32(in); i; i--) {
+        uint32_t addr = read_u32(in);
 
-        char strpas[256];
-        strpas[0] = in.get();
-        in.read(&strpas[1], strpas[0]);
+        symbol_names_[addr] = read_str(in);
 
-        //std::string str(&strpas[1], strpas[0]);
-        // std::cout << " " << str << std::endl;
-
-        symbol_names_[addr].assign(&strpas[1], strpas[0]);
-
-        std::cout << "symbol_names " << std::hex << addr << " " << symbol_names_[addr] << std::endl;
+        // std::cout << "symbol_names " << std::hex << addr << " " << symbol_names_[addr] << std::endl;
     }
 }
 
 void
 LogRunner::SaveState(std::ostream &out)
 {
+    out << "wait";
+    write_u32(out, wait_seqs_.size());
+
     for (auto it : wait_seqs_) {
-        std::cout << "wait_seqs_, " << it.first << ": " <<it.second << std::endl;
+        write_u32(out, it.first);
+        write_u32(out, it.second);
+        // std::cout << "wait_seqs_, " << it.first << ": " <<it.second << std::endl;
     }
+
+    out << "crit";
+    write_u32(out, critsec_seqs_.size());
 
     for (auto it : critsec_seqs_) {
-        std::cout << "critsec_seqs_, " << it.first << ": " <<it.second << std::endl;
+        write_u32(out, it.first);
+        write_u32(out, it.second);
+        //std::cout << "critsec_seqs_, " << it.first << ": " <<it.second << std::endl;
     }
 
-    std::cout << "bb_count_: " << bb_count_ <<  std::endl;
-    std::cout << "it_thread_: " << it_thread_->first <<  std::endl;
+    write_u32(out, bb_count_);
+
+    out << "thrd";
+    write_u32(out, info_threads_.size());
 
     for (auto it = info_threads_.begin(); it != info_threads_.end(); ++it) {
-        uint thread_id = it->first;
         thread_info_c &thread_info = it->second;
 
-        std::cout << "info_threads_, id: " << thread_id;
-        thread_info.Dump();
+        write_u32(out, it->first);
+        //std::cout << "info_threads_, #" << it->first << " ";
+        thread_info.SaveState(out);
+    }
+
+    write_u32(out, it_thread_->first);
+}
+
+void
+LogRunner::RestoreState(std::istream &in)
+{
+    if (filename_.empty()) return;
+
+    if (!read_match(in, "wait")) return;
+    wait_seqs_.clear();
+
+    for(int i = read_u32(in); i; i--) {
+        uint32_t first = read_u32(in);
+        uint32_t second = read_u32(in);
+        wait_seqs_[first] = second;
+
+        std::cout << "wait_seqs_, " << first << ": " << second << std::endl;
+    }
+
+    if (!read_match(in, "crit")) return;
+    critsec_seqs_.clear();
+
+    for(int i = read_u32(in); i; i--) {
+        uint32_t first = read_u32(in);
+        uint32_t second = read_u32(in);
+        critsec_seqs_[first] = second;
+        std::cout << "critsec_seqs_, " << first << ": " << second << std::endl;
+    }
+
+    bb_count_ = read_u32(in);
+    std::cout << "bb_count_: " << bb_count_ <<  std::endl;
+
+    if (!read_match(in, "thrd")) return;
+    info_threads_.clear();
+
+    for(int i = read_u32(in); i; i--) {
+        uint32_t first = read_u32(in);
+
+        thread_info_c &thread_info = info_threads_[first];
+
+        if (first == 0) {
+            thread_info.logparser.open(filename_.c_str());
+        } else {
+            std::ostringstream oss;
+            oss << filename_ << "." << std::dec << first;
+            thread_info.logparser.open(oss.str().c_str());
+        }
+
+        std::cout << "info_threads_, #" << first << " " << thread_info.logparser.filename() << " ";
+
+        thread_info.RestoreState(in);
+        thread_info.logparser.seek(thread_info.filepos);
+    }
+
+    uint32_t thread_id = read_u32(in);
+    std::cout << "it_thread_: " << thread_id <<  std::endl;
+
+    it_thread_ = info_threads_.find(thread_id);
+    if (it_thread_ == info_threads_.end()) {
+        std::cout << "ERROR: don't know current thread" << std::endl;
     }
 }
 
+void
+thread_info_c::SaveState(std::ostream &out)
+{
+    out << "info";
+
+    std::cout << "id: " << id << std::endl;
+    write_u32(out, id);
+
+    write_bool(out, running);
+
+    write_bool(out, finished);
+
+    write_u32(out, last_kind);
+
+    write_u32(out, hevent_wait);
+
+    write_u32(out, hevent_seq);
+
+    write_u32(out, hmutex_wait);
+
+    write_u32(out, hmutex_seq);
+
+    write_u32(out, critsec_wait);
+
+    write_u32(out, critsec_seq);
+
+    write_u64(out, filepos);
+    std::cout << "filepos: " << filepos << std::endl;
+
+    write_u32(out, within_bb);
+
+    write_u32(out, bb_count);
+
+    write_u32(out, apicalls.size());
+
+    int j = -1;
+    for (uint i = 0; i < apicalls.size(); ++i) {
+        df_apicall_c &apicall_cur = apicalls[i];
+        apicall_cur.SaveState(out);
+
+        if (apicall_now == &apicall_cur) j = i;
+    }
+
+    write_u32(out, j);
+}
+
+void
+thread_info_c::RestoreState(std::istream &in)
+{
+    if (!read_match(in, "info")) return;
+
+    id = read_u32(in);
+    std::cout << "id: " << id << std::endl;
+
+    running = read_bool(in);
+    std::cout << "running: " << running << std::endl;
+
+    finished = read_bool(in);
+    std::cout << "finished: " << finished << std::endl;
+
+    last_kind = read_u32(in);
+    std::cout << "last_kind: " << last_kind;
+    if (last_kind)
+       std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
+    std::cout << std::endl;
+
+    hevent_wait = read_u32(in);
+    std::cout << "hevent_wait: " << hevent_wait << std::endl;
+
+    hevent_seq = read_u32(in);
+    std::cout << "hevent_seq: " << hevent_seq << std::endl;
+
+    hmutex_wait = read_u32(in);
+    std::cout << "hmutex_wait: " << hmutex_wait << std::endl;
+
+    hmutex_seq = read_u32(in);
+    std::cout << "hmutex_seq: " << hmutex_seq << std::endl;
+
+    critsec_wait = read_u32(in);
+    std::cout << "critsec_wait: " << critsec_wait << std::endl;
+
+    critsec_seq = read_u32(in);
+    std::cout << "critsec_seq: " << critsec_seq << std::endl;
+
+    filepos = read_u64(in);
+    std::cout << "filepos: " << filepos << std::endl;
+
+    within_bb = (app_pc)read_u32(in);
+    std::cout << "within_bb: " << within_bb << std::endl;
+
+    bb_count = read_u32(in);
+    std::cout << "bb_count: " << bb_count << std::endl;
+
+    apicalls.clear();
+    for(int i = read_u32(in); i; i--) {
+        apicalls.push_back(df_apicall_c());
+        apicall_now = &apicalls.back();
+
+        std::cout << "apicalls, " << i << ": ";
+
+        apicall_now->RestoreState(in);
+    }
+
+    int j = (signed)read_u32(in); // apicall_now
+    apicall_now = j == -1 ? nullptr : &apicalls[j];
+
+    std::cout << "apicall_now: " << std::dec << j << std::endl;
+}
+
+void
+df_apicall_c::SaveState(std::ostream &out)
+{
+    out << "call";
+
+    // std::cout << "call " << name << "@" << func << "( ";
+    write_u32(out, func);
+    write_str(out, name);
+    write_u32(out, ret_addr);
+
+    write_u32(out, callargs.size());
+
+    for (auto carg: callargs) {
+        write_u32(out, carg);
+    }
+
+    write_u32(out, callstrings.size());
+
+    for (auto cstr: callstrings) {
+        write_str(out, cstr);
+    }
+
+    write_u32(out, retargs.size());
+
+    for (auto rarg: retargs) {
+        write_u32(out, rarg);
+    }
+
+    write_u32(out, retstrings.size());
+
+    for (auto rstr: retstrings) {
+        write_str(out, rstr);
+    }
+}
+
+
+void
+df_apicall_c::RestoreState(std::istream &in)
+{
+    if (!read_match(in, "call")) return;
+
+    func = read_u32(in);
+    name = read_str(in);
+    ret_addr = read_u32(in);
+
+    callargs.clear();
+    for (int i = read_u32(in); i; i--) {
+        int carg = read_u32(in);
+        callargs.push_back(carg);
+        std::cout << std::dec << carg << ", ";
+    }
+
+    callstrings.clear();
+    for (int i = read_u32(in); i; i--) {
+        std::string cstr = read_str(in);
+        callstrings.push_back(cstr);
+        std::cout << cstr << ", ";
+    }
+
+    std::cout << ") -> { ";
+
+    retargs.clear();
+    for (int i = read_u32(in); i; i--) {
+        int rarg = read_u32(in);
+        retargs.push_back(rarg);
+        std::cout << std::dec << rarg << ", ";
+    }
+
+    retstrings.clear();
+    for (int i = read_u32(in); i; i--) {
+        std::string rstr = read_str(in);
+        retstrings.push_back(rstr);
+        std::cout << rstr << ", ";
+    }
+
+    std::cout << "} => " << std::hex << ret_addr << std::endl;
+}

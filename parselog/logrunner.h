@@ -74,5 +74,5 @@ public:
     void SaveState(std::ostream &out);
 
     void RestoreSymbols(std::istream &in);
-    // void RestoreState(std::istream &in);
+    void RestoreState(std::istream &in);
 };

@@ -26,8 +26,9 @@ public:
         return allocated_;
     }
 
-    uint peek(uint64 *inpos = nullptr);
-    char* fetch(uint64 *inpos = nullptr);
+    uint peek();
+    char* fetch();
 
     static uint buf_size(uint kind);
+    uint64 inpos() { return inpos_; };
 };

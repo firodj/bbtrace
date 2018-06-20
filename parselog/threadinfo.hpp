@@ -12,6 +12,8 @@ public:
     df_apicall_c():
         func(0), ret_addr(0) {}
     void Dump();
+    void SaveState(std::ostream &out);
+    void RestoreState(std::istream &in);
 };
 
 class thread_info_c {
@@ -47,6 +49,8 @@ public:
         last_kind(KIND_NONE) {}
 
     void Dump();
+    void SaveState(std::ostream &out);
+    void RestoreState(std::istream &in);
 };
 
 typedef std::map<uint, thread_info_c> map_thread_info_t;

@@ -28,7 +28,6 @@ buffer_c::extract(std::istream &in) {
         uint new_pos = available_ - pos_;
         memcpy(&data_[0], &data_[pos_], new_pos);
         pos_ = new_pos;
-        inpos_ += pos_;
     }
     in.read(&data_[pos_], allocated_ - pos_);
     uint bytes = in.gcount();
@@ -39,16 +38,15 @@ buffer_c::extract(std::istream &in) {
 }
 
 uint
-buffer_c::peek(uint64 *inpos) {
+buffer_c::peek() {
     uint kind;
     if (pos_ + sizeof(kind) > available_) return KIND_NONE;
     kind = *reinterpret_cast<uint*>(data());
-    if (inpos) *inpos = inpos_ + pos_;
     return kind;
 }
 
 char*
-buffer_c::fetch(uint64 *inpos) {
+buffer_c::fetch() {
     uint kind;
     if (pos_ + sizeof(kind) > available_) return NULL;
     kind = *reinterpret_cast<uint*>(data());
@@ -56,8 +54,8 @@ buffer_c::fetch(uint64 *inpos) {
     if (size == 0) return NULL;
     if (pos_ + size > available_) return NULL;
     char *buf_item = data();
-    if (inpos) *inpos = inpos_ + pos_ + size; // tell next pos
     pos_ += size;
+    inpos_ += size;
     return buf_item;
 }
 
