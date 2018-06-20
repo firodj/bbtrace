@@ -49,6 +49,25 @@ void signal_handler(int signal)
     gSignalStatus = signal;
 }
 
+std::string
+get_states_name(std::string &filename, uint cnt)
+{
+    std::ostringstream oss;
+    oss << filename << ".sav-" << std::dec << cnt;
+    return oss.str();
+}
+
+uint
+get_available_states(std::string &filename)
+{
+    for(uint cnt = 1; true; cnt++) {
+        std::ifstream f(get_states_name(filename, cnt));
+        if (! f.good()) return cnt;
+    }
+
+    return 0;
+}
+
 int
 main(int argc, PCHAR* argv)
 {
@@ -124,16 +143,23 @@ main(int argc, PCHAR* argv)
     LogRunner runner;
     if (runner.Open(filename)) {
         if (opt_input_state) {
-            {
+            uint sav_cnt = get_available_states(filename);
+            if (sav_cnt > 1) {
+                std::ostringstream oss;
+                oss << get_states_name(filename, sav_cnt-1) << ".symbols";
+
                 std::ifstream fsymb;
-                fsymb.open("_symbols.bin", std::ofstream::in | std::ofstream::binary);
-                std::cout << "Reading from _symbols.bin" << std::endl;
+                fsymb.open(oss.str(), std::ofstream::in | std::ofstream::binary);
+                std::cout << "Reading from " << oss.str() << std::endl;
                 runner.RestoreSymbols(fsymb);
-            }
-            {
+
+                oss.str("");
+                oss.clear();
+                oss << get_states_name(filename, sav_cnt-1);
+
                 std::ifstream frun;
-                frun.open("_runs.bin", std::ofstream::in | std::ofstream::binary);
-                std::cout << "Reading from _runs.bin" << std::endl;
+                frun.open(oss.str(), std::ofstream::in | std::ofstream::binary);
+                std::cout << "Reading from " << oss.str() << std::endl;
                 runner.RestoreState(frun);
             }
         }
@@ -148,19 +174,23 @@ main(int argc, PCHAR* argv)
         auto end = std::chrono::system_clock::now();
 
         if (gSignalStatus) {
-            {
-                std::ofstream fsymb;
-                fsymb.open("_symbols.bin", std::ofstream::out | std::ofstream::binary);
-                std::cout << "Writing to _symbols.bin" << std::endl;
-                runner.SaveSymbols(fsymb);
-            }
+            uint sav_cnt = get_available_states(filename);
+            std::ostringstream oss;
+            oss << get_states_name(filename, sav_cnt) << ".symbols";
 
-            {
-                std::ofstream frun;
-                frun.open("_runs.bin", std::ofstream::out | std::ofstream::binary);
-                std::cout << "Writing to _runs.bin" << std::endl;
-                runner.SaveState(frun);
-            }
+            std::ofstream fsymb;
+            fsymb.open(oss.str(), std::ofstream::out | std::ofstream::binary);
+            std::cout << "Writing to " << oss.str() << std::endl;
+            runner.SaveSymbols(fsymb);
+
+            oss.str("");
+            oss.clear();
+            oss << get_states_name(filename, sav_cnt);
+
+            std::ofstream frun;
+            frun.open(oss.str(), std::ofstream::out | std::ofstream::binary);
+            std::cout << "Writing to " << oss.str() << std::endl;
+            runner.SaveState(frun);
 
             gSignalStatus = 0;
         }

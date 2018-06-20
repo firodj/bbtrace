@@ -662,7 +662,7 @@ LogRunner::RestoreState(std::istream &in)
         uint32_t second = read_u32(in);
         wait_seqs_[first] = second;
 
-        std::cout << "wait_seqs_, " << first << ": " << second << std::endl;
+        //std::cout << "wait_seqs_, " << first << ": " << second << std::endl;
     }
 
     if (!read_match(in, "crit")) return;
@@ -672,7 +672,7 @@ LogRunner::RestoreState(std::istream &in)
         uint32_t first = read_u32(in);
         uint32_t second = read_u32(in);
         critsec_seqs_[first] = second;
-        std::cout << "critsec_seqs_, " << first << ": " << second << std::endl;
+        //std::cout << "critsec_seqs_, " << first << ": " << second << std::endl;
     }
 
     bb_count_ = read_u32(in);
@@ -714,7 +714,7 @@ thread_info_c::SaveState(std::ostream &out)
 {
     out << "info";
 
-    std::cout << "id: " << id << std::endl;
+    //std::cout << "id: " << id << std::endl;
     write_u32(out, id);
 
     write_bool(out, running);
@@ -736,7 +736,7 @@ thread_info_c::SaveState(std::ostream &out)
     write_u32(out, critsec_seq);
 
     write_u64(out, filepos);
-    std::cout << "filepos: " << filepos << std::endl;
+    //std::cout << "filepos: " << filepos << std::endl;
 
     write_u32(out, within_bb);
 
@@ -770,44 +770,44 @@ thread_info_c::RestoreState(std::istream &in)
     std::cout << "finished: " << finished << std::endl;
 
     last_kind = read_u32(in);
-    std::cout << "last_kind: " << last_kind;
-    if (last_kind)
-       std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
-    std::cout << std::endl;
+    //std::cout << "last_kind: " << last_kind;
+    //if (last_kind)
+    //   std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
+    //std::cout << std::endl;
 
     hevent_wait = read_u32(in);
-    std::cout << "hevent_wait: " << hevent_wait << std::endl;
+    //std::cout << "hevent_wait: " << hevent_wait << std::endl;
 
     hevent_seq = read_u32(in);
-    std::cout << "hevent_seq: " << hevent_seq << std::endl;
+    //std::cout << "hevent_seq: " << hevent_seq << std::endl;
 
     hmutex_wait = read_u32(in);
-    std::cout << "hmutex_wait: " << hmutex_wait << std::endl;
+    //std::cout << "hmutex_wait: " << hmutex_wait << std::endl;
 
     hmutex_seq = read_u32(in);
-    std::cout << "hmutex_seq: " << hmutex_seq << std::endl;
+    //std::cout << "hmutex_seq: " << hmutex_seq << std::endl;
 
     critsec_wait = read_u32(in);
-    std::cout << "critsec_wait: " << critsec_wait << std::endl;
+    //std::cout << "critsec_wait: " << critsec_wait << std::endl;
 
     critsec_seq = read_u32(in);
-    std::cout << "critsec_seq: " << critsec_seq << std::endl;
+    //std::cout << "critsec_seq: " << critsec_seq << std::endl;
 
     filepos = read_u64(in);
-    std::cout << "filepos: " << filepos << std::endl;
+    //std::cout << "filepos: " << filepos << std::endl;
 
     within_bb = (app_pc)read_u32(in);
-    std::cout << "within_bb: " << within_bb << std::endl;
+    //std::cout << "within_bb: " << within_bb << std::endl;
 
     bb_count = read_u32(in);
-    std::cout << "bb_count: " << bb_count << std::endl;
+    //std::cout << "bb_count: " << bb_count << std::endl;
 
     apicalls.clear();
     for(int i = read_u32(in); i; i--) {
         apicalls.push_back(df_apicall_c());
         apicall_now = &apicalls.back();
 
-        std::cout << "apicalls, " << i << ": ";
+        //std::cout << "apicalls, " << i << ": ";
 
         apicall_now->RestoreState(in);
     }
@@ -823,7 +823,6 @@ df_apicall_c::SaveState(std::ostream &out)
 {
     out << "call";
 
-    // std::cout << "call " << name << "@" << func << "( ";
     write_u32(out, func);
     write_str(out, name);
     write_u32(out, ret_addr);
@@ -863,11 +862,13 @@ df_apicall_c::RestoreState(std::istream &in)
     name = read_str(in);
     ret_addr = read_u32(in);
 
+    // std::cout << "call " << name << "@" << func << "( ";
+
     callargs.clear();
     for (int i = read_u32(in); i; i--) {
         int carg = read_u32(in);
         callargs.push_back(carg);
-        std::cout << std::dec << carg << ", ";
+        // std::cout << std::dec << carg << ", ";
     }
 
     callstrings.clear();
@@ -877,21 +878,21 @@ df_apicall_c::RestoreState(std::istream &in)
         std::cout << cstr << ", ";
     }
 
-    std::cout << ") -> { ";
+    //std::cout << ") -> { ";
 
     retargs.clear();
     for (int i = read_u32(in); i; i--) {
         int rarg = read_u32(in);
         retargs.push_back(rarg);
-        std::cout << std::dec << rarg << ", ";
+        //std::cout << std::dec << rarg << ", ";
     }
 
     retstrings.clear();
     for (int i = read_u32(in); i; i--) {
         std::string rstr = read_str(in);
         retstrings.push_back(rstr);
-        std::cout << rstr << ", ";
+        //std::cout << rstr << ", ";
     }
 
-    std::cout << "} => " << std::hex << ret_addr << std::endl;
+    //std::cout << "} => " << std::hex << ret_addr << std::endl;
 }
