@@ -45,6 +45,8 @@ enum {
     LINK_RETURN
 };
 
+#define LINK_SHIFT_FIELD 8
+
 typedef struct _mem_ref_t {
     uint kind;
     uint addr;

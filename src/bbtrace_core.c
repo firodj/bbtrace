@@ -709,18 +709,18 @@ instrument_bb(void *drcontext, instrlist_t *ilist, instr_t *where, void *user_da
         case OP_call_ind:
         case OP_call_far:
         case OP_call_far_ind:
-            len_last_instr |= (LINK_CALL << 8);
+            len_last_instr |= (LINK_CALL << LINK_SHIFT_FIELD);
             break;
         case OP_ret:
         case OP_ret_far:
         case OP_iret:
-            len_last_instr |= (LINK_RETURN << 8);
+            len_last_instr |= (LINK_RETURN << LINK_SHIFT_FIELD);
             break;
         case OP_int:
         case OP_int3:
         case OP_into:
         default:
-            len_last_instr |= (LINK_JMP << 8);
+            len_last_instr |= (LINK_JMP << LINK_SHIFT_FIELD);
     }
 
     code_cache = codecache_get();
