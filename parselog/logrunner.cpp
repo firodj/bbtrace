@@ -83,11 +83,9 @@ LogRunner::Step()
         // Check Lib Ret first
         if (thread_info.apicall_now) {
             kind = thread_info.logparser.peek();
-            if (kind != KIND_ARGS && kind != KIND_STRING) {
-                if (thread_info.last_kind == KIND_LIB_RET) {
-                    ApiCallRet(thread_info);
-                    break;
-                }
+            if (kind != KIND_ARGS && kind != KIND_STRING && thread_info.last_kind == KIND_LIB_RET) {
+                ApiCallRet(thread_info);
+                break;
             }
         }
 
@@ -100,9 +98,15 @@ LogRunner::Step()
             }
         }
 
-        // Consume kind
-        char *item = thread_info.logparser.fetch();
-        thread_info.filepos = thread_info.logparser.tell();
+        char *item;
+        if (thread_info.pending_state == 1) {
+            item = (char*)&thread_info.pending_bb;
+            thread_info.pending_state = 0;
+        } else {
+            // Consume kind
+            item = thread_info.logparser.fetch();
+            thread_info.filepos = thread_info.logparser.tell();
+        }
 
         if (!item) {
             FinishThread(thread_info);
@@ -110,10 +114,26 @@ LogRunner::Step()
             break;
         }
         kind = *(uint*)item;
+        mem_ref_t *buf_bb;
 
         switch (kind) {
             case KIND_BB:
-                DoKindBB(thread_info, *(mem_ref_t*)item);
+                buf_bb = (mem_ref_t*)item;
+                if (thread_info.pending_state == 1) {
+                    std::cout << thread_info.pending_state;
+                    std::cout << " " << std::dec <<  thread_info.id;
+                    std::cout << " " << std::hex <<  buf_bb->pc;
+                    std::cout << std::endl;
+                    throw std::runtime_error("repending ?");
+                }
+
+                if (thread_info.apicall_now && thread_info.apicall_now->ret_addr == buf_bb->pc) {
+                    thread_info.pending_bb = *buf_bb;
+                    thread_info.pending_state = 2;
+                    continue;
+                } else {
+                    DoKindBB(thread_info, *(mem_ref_t*)item);
+                }
                 break;
             case KIND_LOOP:
                 // mem_ref_t *buf_item = reinterpret_cast<mem_ref_t*>(item);
@@ -140,6 +160,12 @@ LogRunner::Step()
                 break;
             case KIND_LIB_RET:
                 DoKindLibRet(thread_info, *(buf_lib_ret_t*)item);
+
+                if (thread_info.pending_state == 2) {
+                    thread_info.pending_state = 1;
+                    thread_info.last_kind = kind;
+                    continue;
+                }
                 break;
             case KIND_APP_CALL:
                 // buf_app_call_t *buf_item = reinterpret_cast<buf_app_call_t*>(item);
@@ -178,6 +204,82 @@ void
 LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
 {
     thread_info.within_bb = (uint) buf_bb.pc;
+    uint len_last_instr = buf_bb.size & ((1 << LINK_SHIFT_FIELD) - 1);
+    uint bb_link = buf_bb.size >> LINK_SHIFT_FIELD;
+    app_pc next_bb = buf_bb.addr + len_last_instr;
+
+#if 0
+    if (thread_info.id == 0) {
+        std::cout << std::dec << thread_info.id << "] ";
+        std::cout << "bb.pc " << std::hex << buf_bb.pc;
+        std::cout << " next " << std::hex << next_bb;
+        std::cout << " bb.link ";
+        switch (bb_link) {
+            case LINK_CALL: std::cout << "CALL"; break;
+            case LINK_RETURN: std::cout << "RETURN"; break;
+            case LINK_JMP: std::cout << "JMP"; break;
+        }
+        std::cout << std::endl;
+    }
+#endif
+    if (thread_info.last_bb.link == LINK_CALL) {
+        size_t i = thread_info.stacks.size();
+        if (i) {
+            df_stackitem_c& item = thread_info.stacks[i-1];
+            if (item.kind == KIND_BB && item.next == thread_info.within_bb) {
+                thread_info.stacks.erase(
+                    thread_info.stacks.begin()+i-1,
+                    thread_info.stacks.end());
+            }
+        }
+    }
+    if (thread_info.last_bb.link == LINK_RETURN) {
+        size_t i;
+        for (i = thread_info.stacks.size(); i > 0; --i) {
+            df_stackitem_c& item = thread_info.stacks[i-1];
+            if (item.kind == KIND_BB && item.next == thread_info.within_bb) {
+                thread_info.stacks.erase(
+                    thread_info.stacks.begin()+i-1,
+                    thread_info.stacks.end());
+                break;
+            }
+            if (item.kind == KIND_LIB_CALL)
+                break;
+        }
+        if (i == 0) {
+            if (thread_info.id == 0) {
+                std::cout << std::dec << thread_info.id;
+                std::cout << "] Mismatch stack for 0x" << std::hex << thread_info.within_bb
+                    << " from 0x" << thread_info.last_bb.pc
+                    << " stack size = " << std::dec << thread_info.stacks.size();
+
+                df_stackitem_c& item = thread_info.stacks.back();
+                std::cout << " TOP: 0x" << std::hex << item.pc;
+
+                if (thread_info.apicalls.size() ) {
+                    df_apicall_c &libret_last = thread_info.apicalls.back();
+                    std::cout << " Lib:0x " << std::hex << libret_last.func;
+                    std::cout << " " << libret_last.name;
+                    std::cout << " Ret:0x " << std::hex << libret_last.ret_addr;
+                }
+                std::cout << std::endl;
+
+                //throw std::runtime_error ("DIE!");
+            }
+        }
+    }
+
+    thread_info.last_bb.kind = KIND_BB;
+    thread_info.last_bb.pc   = buf_bb.pc;
+    thread_info.last_bb.next = next_bb;
+    thread_info.last_bb.link = bb_link;
+
+    if (bb_link == LINK_CALL) {
+        thread_info.stacks.push_back(df_stackitem_c());
+        df_stackitem_c& item = thread_info.stacks.back();
+        item = thread_info.last_bb;
+    }
+
     thread_info.bb_count++;
 }
 
@@ -204,6 +306,23 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
         name = symbol_names_[buf_libcall.func];
     }
 
+#if 0
+    if (thread_info.id == 0) {
+        std::cout << std::dec << thread_info.id << "] ";
+        std::cout << "Lib Call: 0x" << std::hex << buf_libcall.func;
+        std::cout << " " << name;
+        std::cout << " Ret:0x" << buf_libcall.ret_addr;
+        std::cout << std::endl;
+    }
+#endif
+    thread_info.stacks.push_back(df_stackitem_c());
+    df_stackitem_c& item = thread_info.stacks.back();
+
+    item.kind = KIND_LIB_CALL;
+    item.pc   = buf_libcall.func;
+    item.next = buf_libcall.ret_addr;
+    item.link = 0;
+
     thread_info.apicalls.push_back(df_apicall_c());
     thread_info.apicall_now = &thread_info.apicalls.back();
 
@@ -221,11 +340,41 @@ LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret)
         name = symbol_names_[buf_libret.func];
     }
 
+#if 0
+    if (thread_info.id == 0) {
+        std::cout << std::dec << thread_info.id << "] ";
+        std::cout << "Lib Ret :0x " << std::hex << buf_libret.func;
+        std::cout << " " << name;
+        std::cout << " Ret:0x" << buf_libret.ret_addr;
+        std::cout << std::endl;
+    }
+#endif
+    if (thread_info.apicalls.size() == 0)
+        throw std::runtime_error ("Apicall stacks empty!");
+
     df_apicall_c &libret_last = thread_info.apicalls.back();
     if (libret_last.func != buf_libret.func &&
         libret_last.ret_addr != buf_libret.ret_addr) {
         std::cout << "Unmatch lib ret!" << std::endl;
         throw std::runtime_error ("Unmatch lib ret!");
+    }
+
+    size_t i;
+    for (i = thread_info.stacks.size(); i > 0; --i) {
+        df_stackitem_c& item = thread_info.stacks[i-1];
+        if (item.kind == KIND_LIB_CALL && item.next == buf_libret.ret_addr) {
+            thread_info.stacks.erase(
+                thread_info.stacks.begin()+i-1,
+                thread_info.stacks.end());
+            break;
+        }
+    }
+    if (i == 0) {
+        std::cout << std::dec << thread_info.id;
+        std::cout << "] Mismatch stack for 0x" << std::hex << buf_libret.ret_addr
+            << " from func 0x" << libret_last.func
+            << " stack size = " << std::dec << thread_info.stacks.size()
+            << std::endl;
     }
 
     thread_info.apicall_now = &thread_info.apicalls.back();
@@ -734,6 +883,12 @@ thread_info_c::SaveState(std::ostream &out)
     }
 
     write_u32(out, j);
+
+    write_u32(out, pending_state);
+
+    if (pending_state) {
+        write_data(out, (char*)&pending_bb, 16);
+    }
 }
 
 void
@@ -797,6 +952,12 @@ thread_info_c::RestoreState(std::istream &in)
     apicall_now = j == -1 ? nullptr : &apicalls[j];
 
     std::cout << "apicall_now: " << std::dec << j << std::endl;
+
+    pending_state = read_u32(in);
+
+    if (pending_state) {
+        read_data(in, (char*)&pending_bb, 16);
+    }
 }
 
 void

@@ -16,6 +16,14 @@ public:
     void RestoreState(std::istream &in);
 };
 
+class df_stackitem_c {
+public:
+    uint kind;
+    app_pc pc;
+    app_pc next;
+    uint link;
+};
+
 class thread_info_c {
 public:
     logparser_c logparser;
@@ -23,7 +31,11 @@ public:
     bool finished;
     uint last_kind;
     std::vector<df_apicall_c> apicalls;
+    std::vector<df_stackitem_c> stacks;
+    df_stackitem_c last_bb;
     df_apicall_c *apicall_now;
+    mem_ref_t pending_bb;
+    uint pending_state;
     uint hevent_wait;
     uint hevent_seq;
     uint hmutex_wait;
@@ -42,6 +54,7 @@ public:
         hmutex_wait(0),
         critsec_wait(0),
         apicall_now(nullptr),
+        pending_state(0),
         filepos(0),
         within_bb(0),
         id(0),

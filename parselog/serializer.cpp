@@ -33,6 +33,12 @@ write_str(std::ostream &out, std::string &str)
     out.write(str.c_str(), sz);
 }
 
+void
+write_data(std::ostream &out, char*data, uint sz)
+{
+    out.write(data, sz);
+}
+
 uint32_t
 read_u32(std::istream &in)
 {
@@ -82,4 +88,9 @@ read_match(std::istream &in, const char *signature)
     in.seekg(current);
     return false;
 
+}
+
+void read_data(std::istream &in,char*data, uint sz)
+{
+    in.read(data, sz);
 }
