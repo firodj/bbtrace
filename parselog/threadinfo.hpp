@@ -22,6 +22,9 @@ public:
     app_pc pc;
     app_pc next;
     uint link;
+    void Dump();
+    void SaveState(std::ostream &out);
+    void RestoreState(std::istream &in);
 };
 
 class thread_info_c {
@@ -46,6 +49,7 @@ public:
     app_pc within_bb;
     uint id;
     uint bb_count;
+    uint64 running_ts;
 
     thread_info_c():
         running(false),
@@ -59,6 +63,7 @@ public:
         within_bb(0),
         id(0),
         bb_count(0),
+        running_ts(0),
         last_kind(KIND_NONE) {}
 
     void Dump();

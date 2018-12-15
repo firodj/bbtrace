@@ -19,9 +19,9 @@ private:
     std::map<uint, thread_info_c>::iterator it_thread_;
     std::string filename_;
     uint show_options_;
-    uint bb_count_;
     std::vector<uint> filter_apicall_addrs_;
     std::vector<std::string> filter_apicall_names_;
+    uint64 thread_ts_;
 
 protected:
     virtual void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
@@ -36,7 +36,7 @@ protected:
     virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
 
 public:
-    LogRunner(): bb_count_(0), show_options_(0) {}
+    LogRunner(): show_options_(0), thread_ts_(0) {}
 
     bool Open(std::string &filename);
 
@@ -68,8 +68,8 @@ public:
 
     void Summary();
 
-    uint& bb_count() {
-        return bb_count_;
+    uint64& thread_ts() {
+        return thread_ts_;
     }
 
     void FilterApiCall(std::string &name)
