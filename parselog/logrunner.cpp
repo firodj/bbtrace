@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <iterator>
 #include <stdexcept>   // for exception, runtime_error, out_of_range
 
 #include "logrunner.h"
@@ -29,6 +30,7 @@ LogRunner::Open(std::string &filename) {
 
     it_thread_ = info_threads_.end();
     thread_ts_ = 1;
+    bb_counts_ = 0;
     return true;
 }
 
@@ -45,6 +47,7 @@ LogRunner::FinishThread(thread_info_c &thread_info)
     }
 
     thread_info.finished = true;
+    bb_counts_ += thread_info.bb_count;
 
     std::cout << std::dec << thread_info.id << "] ";
     std::cout << "thread finished. ";
@@ -54,7 +57,6 @@ LogRunner::FinishThread(thread_info_c &thread_info)
 bool
 LogRunner::Step()
 {
-    bool is_pending_thread_ts = false;
     uint inactive = 0;
     for(; inactive < info_threads_.size();
             inactive++, it_thread_++) {
@@ -76,11 +78,7 @@ LogRunner::Step()
 
     uint thread_id = it_thread_->first;
     thread_info_c &thread_info = it_thread_->second;
-    auto it_current = it_thread_++;
-    if (it_thread_ == info_threads_.end()) {
-        it_thread_ = info_threads_.begin();
-        is_pending_thread_ts = true;
-    }
+    auto it_next = std::next(it_thread_, 1);
 
     while (thread_info.running) {
         uint kind;
@@ -115,7 +113,7 @@ LogRunner::Step()
 
         if (!item) {
             FinishThread(thread_info);
-            info_threads_.erase(it_current);
+            info_threads_.erase(it_thread_);
             break;
         }
         kind = *(uint*)item;
@@ -126,8 +124,8 @@ LogRunner::Step()
                 buf_bb = (mem_ref_t*)item;
                 if (thread_info.pending_state == 1) {
                     std::cout << thread_info.pending_state;
-                    std::cout << " " << std::dec <<  thread_info.id;
-                    std::cout << " " << std::hex <<  buf_bb->pc;
+                    std::cout << " " << std::dec << thread_info.id;
+                    std::cout << " 0x" << std::hex << buf_bb->pc;
                     std::cout << std::endl;
                     throw std::runtime_error("repending ?");
                 }
@@ -202,7 +200,7 @@ LogRunner::Step()
         }
     }
 
-    if (is_pending_thread_ts) thread_ts_++;
+    it_thread_ = it_next;
 
     return true;
 }
@@ -256,7 +254,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
         if (i == 0) {
             if (thread_info.id == 0) {
                 std::cout << std::dec << thread_info.id;
-                std::cout << "] Mismatch stack for 0x" << std::hex << thread_info.within_bb
+                std::cout << "] Mismatch stack, return to 0x" << std::hex << thread_info.within_bb
                     << " from 0x" << thread_info.last_bb.pc
                     << " stack size = " << std::dec << thread_info.stacks.size();
 
@@ -271,6 +269,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
                     std::cout << " " << libret_last.name;
                     std::cout << " Ret:0x " << std::hex << libret_last.ret_addr;
                 }
+                std::cout << " (A:" << std::dec << thread_ts_ << ")";
                 std::cout << std::endl;
 
                 //throw std::runtime_error ("DIE!");
@@ -302,7 +301,7 @@ LogRunner::DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym)
     for (auto filter_name : filter_apicall_names_) {
         if (name == filter_name) {
             filter_apicall_addrs_.push_back(buf_sym.func);
-            std::cout << "Filter apicall: " << filter_name << " addr: " << std::hex << buf_sym.func << std::endl;
+            std::cout << "Filter apicall: " << filter_name << " addr:0x" << std::hex << buf_sym.func << std::endl;
         }
     }
 }
@@ -310,20 +309,23 @@ LogRunner::DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym)
 void
 LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall)
 {
+    const bool verbose = false;
+
     std::string name;
     if (symbol_names_.find(buf_libcall.func) != symbol_names_.end()) {
         name = symbol_names_[buf_libcall.func];
     }
 
-#if 0
-    if (thread_info.id == 0) {
-        std::cout << std::dec << thread_info.id << "] ";
-        std::cout << "Lib Call: 0x" << std::hex << buf_libcall.func;
-        std::cout << " " << name;
-        std::cout << " Ret:0x" << buf_libcall.ret_addr;
-        std::cout << std::endl;
+    if (verbose) {
+        if (thread_info.id == 0) {
+            std::cout << std::dec << thread_info.id << "] ";
+            std::cout << "Lib Call func:0x" << std::hex << buf_libcall.func;
+            std::cout << " '" << name;
+            std::cout << "' Ret:0x" << buf_libcall.ret_addr;
+            std::cout << std::endl;
+        }
     }
-#endif
+
     thread_info.stacks.push_back(df_stackitem_c());
     df_stackitem_c& item = thread_info.stacks.back();
 
@@ -344,22 +346,26 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
 void
 LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret)
 {
+    const bool verbose = false;
     std::string name;
     if (symbol_names_.find(buf_libret.func) != symbol_names_.end()) {
         name = symbol_names_[buf_libret.func];
     }
 
-#if 0
-    if (thread_info.id == 0) {
-        std::cout << std::dec << thread_info.id << "] ";
-        std::cout << "Lib Ret :0x " << std::hex << buf_libret.func;
-        std::cout << " " << name;
-        std::cout << " Ret:0x" << buf_libret.ret_addr;
-        std::cout << std::endl;
+    if (verbose) {
+        if (thread_info.id == 0) {
+            std::cout << std::dec << thread_info.id << "] ";
+            std::cout << "Lib Ret func:0x" << std::hex << buf_libret.func;
+            std::cout << " '" << name;
+            std::cout << "' Ret:0x" << buf_libret.ret_addr;
+            std::cout << std::endl;
+        }
     }
-#endif
-    if (thread_info.apicalls.size() == 0)
+
+    if (thread_info.apicalls.size() == 0) {
+        std::cout << "Apicall stacks empty!" << std::endl;
         throw std::runtime_error ("Apicall stacks empty!");
+    }
 
     df_apicall_c &libret_last = thread_info.apicalls.back();
     if (libret_last.func != buf_libret.func &&
@@ -380,14 +386,17 @@ LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret)
     }
     if (i == 0) {
         std::cout << std::dec << thread_info.id;
-        std::cout << "] Mismatch stack for 0x" << std::hex << buf_libret.ret_addr
+        std::cout << "] Mismatch stack, return to 0x" << std::hex << buf_libret.ret_addr
             << " from func 0x" << libret_last.func
             << " stack size = " << std::dec << thread_info.stacks.size()
             << std::endl;
     }
 
-    thread_info.apicall_now = &thread_info.apicalls.back();
-    thread_info.apicall_now->retargs.push_back((uint)buf_libret.retval);
+    if (thread_info.apicalls.size()) {
+        // FIXME!
+        thread_info.apicall_now = &thread_info.apicalls.back();
+        thread_info.apicall_now->retargs.push_back((uint)buf_libret.retval);
+    }
 }
 
 void
@@ -572,7 +581,7 @@ df_apicall_c::Dump()
     for (auto rstr: retstrings) {
         std::cout << rstr << ", ";
     }
-    std::cout << "} => " << std::hex << ret_addr << std::endl;
+    std::cout << "} => 0x" << std::hex << ret_addr << std::endl;
 }
 
 void
@@ -606,7 +615,7 @@ LogRunner::DoEndBB(thread_info_c &thread_info /* , bb mem read/write */)
 {
     if (show_options_ & LR_SHOW_BB) {
         std::cout << std::dec << thread_info.id << "] ";
-        std::cout << "bb " << std::hex << thread_info.within_bb << std::endl;
+        std::cout << "bb 0x" << std::hex << thread_info.within_bb << std::endl;
     }
     thread_info.within_bb = 0;
 }
@@ -692,11 +701,9 @@ LogRunner::Summary()
 
             FinishThread(thread_info);
         }
-
-        bb_counts += thread_info.bb_count;
     }
 
-    std::cout << "bb counts: " << bb_counts << std::endl;
+    std::cout << "bb counts: " << bb_counts_ << std::endl;
     std::cout << "thread ts: " << thread_ts_ << std::endl;
 }
 
@@ -801,6 +808,9 @@ LogRunner::SaveState(std::ostream &out)
 
     write_u64(out, thread_ts_);
     if (verbose) std::cout << "thread_ts_: " << thread_ts_ <<  std::endl;
+    
+    write_u64(out, bb_counts_);
+    if (verbose) std::cout << "bb_counts_: " << bb_counts_ <<  std::endl;
 }
 
 void
@@ -854,7 +864,7 @@ LogRunner::RestoreState(std::istream &in)
     }
 
     uint32_t thread_id = read_u32(in);
-    std::cout << "it_thread_: " << thread_id <<  std::endl;
+    std::cout << "it_thread_: " << std::dec << thread_id <<  std::endl;
 
     it_thread_ = info_threads_.find(thread_id);
     if (it_thread_ == info_threads_.end()) {
@@ -862,7 +872,10 @@ LogRunner::RestoreState(std::istream &in)
     }
 
     thread_ts_ = read_u64(in);
-    std::cout << "thread_ts_: " << thread_ts_ <<  std::endl;
+    if (verbose) std::cout << std::dec << "thread_ts_: " << thread_ts_ <<  std::endl;
+
+    bb_counts_ = read_u64(in);
+    if (verbose) std::cout << "bb_counts_: " << bb_counts_ <<  std::endl;
 }
 
 void
@@ -937,7 +950,7 @@ thread_info_c::RestoreState(std::istream &in)
     if (!read_match(in, "info")) return;
 
     id = read_u32(in);
-    std::cout << "id: " << id << std::endl;
+    std::cout << "id: " << std::dec << id << std::endl;
 
     running = read_bool(in);
     if (verbose) std::cout << "  running     : " << running << std::endl;
@@ -975,7 +988,7 @@ thread_info_c::RestoreState(std::istream &in)
     if (verbose) std::cout << "  filepos     : " << filepos << std::endl;
 
     within_bb = (app_pc)read_u32(in);
-    if (verbose) std::cout << "  within_bb   : " << std::hex << within_bb << std::endl;
+    if (verbose) std::cout << "  within_bb   : 0x" << std::hex << within_bb << std::endl;
 
     bb_count = read_u32(in);
     if (verbose) std::cout << "  bb_count    : " << std::dec << bb_count << std::endl;
@@ -1096,7 +1109,7 @@ df_apicall_c::RestoreState(std::istream &in)
         if (verbose) std::cout << rstr << ", ";
     }
 
-    if (verbose) std::cout << "} => " << std::hex << ret_addr << std::endl;
+    if (verbose) std::cout << "} => 0x" << std::hex << ret_addr << std::endl;
 }
 
 void df_stackitem_c::Dump()
@@ -1124,5 +1137,17 @@ void df_stackitem_c::RestoreState(std::istream &in)
     next = read_u32(in);
     link = read_u32(in);
 
-    if (verbose) std::cout << kind << pc << next << link << std::endl;
+    if (verbose) {
+        std::cout << kind;
+        if (kind)
+            std::cout << " '" << std::string((char*)&kind, 4) << "'";
+        std::cout << " pc:0x" << std::hex << pc << " next:0x" << next << " " << std::dec;
+        switch (link) {
+            case LINK_CALL: std::cout << "CALL"; break;
+            case LINK_RETURN: std::cout << "RETURN"; break;
+            case LINK_JMP: std::cout << "JMP"; break;
+            default: std::cout << link;
+        }
+        std::cout << std::endl;
+    }
 }

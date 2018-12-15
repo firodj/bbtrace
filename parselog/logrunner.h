@@ -22,6 +22,7 @@ private:
     std::vector<uint> filter_apicall_addrs_;
     std::vector<std::string> filter_apicall_names_;
     uint64 thread_ts_;
+    uint64 bb_counts_;
 
 protected:
     virtual void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
