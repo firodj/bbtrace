@@ -209,6 +209,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     uint len_last_instr = buf_bb.size & ((1 << LINK_SHIFT_FIELD) - 1);
     uint bb_link = buf_bb.size >> LINK_SHIFT_FIELD;
     app_pc next_bb = buf_bb.addr + len_last_instr;
+    bool bb_is_sub = thread_info.bb_count == 0;
 
 #if 0
     if (thread_info.id == 0) {
@@ -224,7 +225,9 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
         std::cout << std::endl;
     }
 #endif
+    // fixes stacks for bb with called (usually) to untracked api
     if (thread_info.last_bb.link == LINK_CALL) {
+        bb_is_sub = true;
         size_t i = thread_info.stacks.size();
         if (i) {
             df_stackitem_c& item = thread_info.stacks[i-1];
@@ -232,6 +235,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
                 thread_info.stacks.erase(
                     thread_info.stacks.begin()+i-1,
                     thread_info.stacks.end());
+                bb_is_sub = false;
             }
         }
     }
@@ -250,6 +254,8 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
         }
         if (i == 0) {
             if (thread_info.id == 0) {
+                bb_is_sub = true;
+
                 std::cout << std::dec << thread_info.id;
                 std::cout << "] Mismatch stack, return to 0x" << std::hex << thread_info.within_bb
                     << " from 0x" << thread_info.last_bb.pc
@@ -278,6 +284,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     thread_info.last_bb.pc   = buf_bb.pc;
     thread_info.last_bb.next = next_bb;
     thread_info.last_bb.link = bb_link;
+    thread_info.last_bb.is_sub = bb_is_sub;
     thread_info.last_bb.ts   = thread_ts_;
     thread_info.last_bb.s_depth = thread_info.stacks.size();
 
@@ -567,7 +574,7 @@ LogRunner::ThreadWaitMutex(thread_info_c &thread_info)
 }
 
 void
-LogRunner::OnApiCall(thread_info_c &thread_info, df_apicall_c &apicall_ret)
+LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
 {
     bool verbose = show_options_ & LR_SHOW_LIBCALL;
     if (!verbose)
@@ -578,7 +585,7 @@ LogRunner::OnApiCall(thread_info_c &thread_info, df_apicall_c &apicall_ret)
     }
     if (verbose) {
         std::cout << std::dec << apicall_ret.ts << "@ ";
-        std::cout << std::dec << thread_info.id << "] ";
+        std::cout << std::dec << thread_id << "] ";
         std::cout << std::dec << "s:" << std::dec << apicall_ret.s_depth << " ";
         apicall_ret.Dump();
     }
@@ -597,7 +604,7 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
     else if (apicall_ret.name == "ResumeThread")
         OnResumeThread(apicall_ret);
 
-    OnApiCall(thread_info, apicall_ret);
+    OnApiCall(thread_info.id, apicall_ret);
 }
 
 void
@@ -606,16 +613,16 @@ LogRunner::DoEndBB(thread_info_c &thread_info /* , bb mem read/write */)
     if (thread_info.within_bb != thread_info.last_bb.pc) {
         throw std::runtime_error("Mismatch last_bb with within_bb !");
     } 
-    OnBB(thread_info, thread_info.last_bb);
+    OnBB(thread_info.id, thread_info.last_bb);
     thread_info.within_bb = 0;
 }
 
 void
-LogRunner::OnBB(thread_info_c &thread_info, df_stackitem_c &last_bb)
+LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb)
 {
     if (show_options_ & LR_SHOW_BB) {
         std::cout << std::dec << last_bb.ts << "@ ";
-        std::cout << std::dec << thread_info.id << "] ";
+        std::cout << std::dec << thread_id << "] ";
         std::cout << std::dec << "s:" << std::dec << last_bb.s_depth << " ";
         last_bb.Dump();
     }
@@ -977,9 +984,11 @@ thread_info_c::Dump(int indent)
     std::cout << _tab << "running: " << running << std::endl;
     std::cout << _tab << "finished: " << finished << std::endl;
 
-    std::cout << _tab << "last_kind:0x" << std::hex << last_kind << std::dec;
+    std::cout << _tab << "last_kind:";
     if (last_kind)
         std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
+    else
+        std::cout << "?";
     std::cout << std::endl;
 
     std::cout << _tab <<  "hevent_wait: " << hevent_wait;
@@ -1122,9 +1131,14 @@ df_stackitem_c::Dump(int indent)
 {
     std::string _tab = std::string(indent, ' ');
 
-    std::cout << _tab << "kind:0x" << std::hex << kind;
+    std::cout << _tab << "kind:";
     if (kind)
         std::cout << " '" << std::string((char*)&kind, 4) << "'";
+    else
+        std::cout << "?";
+
+    if (is_sub)
+        std::cout << " (sub)";
     std::cout << " pc:0x" << std::hex << pc << " next:0x" << next << " " << std::dec;
     switch (link) {
         case LINK_CALL: std::cout << "CALL"; break;
@@ -1143,7 +1157,7 @@ void df_stackitem_c::SaveState(std::ostream &out)
     write_u32(out, kind);
     write_u32(out, pc);
     write_u32(out, next);
-    write_u32(out, link);
+    write_u32(out, flags);
     write_u64(out, ts);
     write_u32(out, s_depth);
 }
@@ -1156,7 +1170,7 @@ void df_stackitem_c::RestoreState(std::istream &in)
     kind = read_u32(in);
     pc = read_u32(in);
     next = read_u32(in);
-    link = read_u32(in);
+    flags = read_u32(in);
     ts = read_u64(in);
     s_depth = read_u32(in);
 }

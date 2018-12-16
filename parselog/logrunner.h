@@ -39,8 +39,8 @@ protected:
     void DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
 
-    virtual void OnApiCall(thread_info_c &thread_info, df_apicall_c &apicall_ret);
-    virtual void OnBB(thread_info_c &thread_info, df_stackitem_c &last_bb);
+    virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
+    virtual void OnBB(uint thread_id, df_stackitem_c &last_bb);
 
 public:
     LogRunner(): show_options_(0), thread_ts_(0) {}

@@ -23,11 +23,17 @@ public:
     uint kind;
     app_pc pc;
     app_pc next;
-    uint link;
+    union {
+        uint flags;
+        struct {
+            uint link:2;
+            bool is_sub:1;
+        };
+    };
     uint64 ts;
     int s_depth;
     df_stackitem_c():
-        pc(0), ts(0) {}
+        pc(0), ts(0), flags(0) {}
     void Dump(int indent = 0);
     void SaveState(std::ostream &out);
     void RestoreState(std::istream &in);
