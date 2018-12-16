@@ -10,6 +10,7 @@ public:
     std::vector<uint> retargs;
     std::vector<std::string> retstrings;
     uint64 ts;
+    int s_depth;
     df_apicall_c():
         func(0), ret_addr(0), ts(0) {}
     void Dump(int indent = 0);
@@ -24,6 +25,7 @@ public:
     app_pc next;
     uint link;
     uint64 ts;
+    int s_depth;
     df_stackitem_c():
         pc(0), ts(0) {}
     void Dump(int indent = 0);

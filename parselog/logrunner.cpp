@@ -26,7 +26,7 @@ LogRunner::Open(std::string &filename) {
     }
 
     it_thread_ = info_threads_.end();
-    thread_ts_ = 1;
+    thread_ts_ = 0;
     bb_counts_ = 0;
     return true;
 }
@@ -279,6 +279,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     thread_info.last_bb.next = next_bb;
     thread_info.last_bb.link = bb_link;
     thread_info.last_bb.ts   = thread_ts_;
+    thread_info.last_bb.s_depth = thread_info.stacks.size();
 
     if (bb_link == LINK_CALL) {
         thread_info.stacks.push_back(df_stackitem_c());
@@ -324,6 +325,7 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
         }
     }
 
+    int s_depth = thread_info.stacks.size();
     thread_info.stacks.push_back(df_stackitem_c());
     df_stackitem_c& item = thread_info.stacks.back();
 
@@ -340,6 +342,7 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
     thread_info.apicall_now->name = name;
     thread_info.apicall_now->callargs.push_back((uint)buf_libcall.arg);
     thread_info.apicall_now->ts = thread_ts_;
+    thread_info.apicall_now->s_depth = s_depth;
 }
 
 void
@@ -574,8 +577,9 @@ LogRunner::OnApiCall(thread_info_c &thread_info, df_apicall_c &apicall_ret)
         }
     }
     if (verbose) {
-        std::cout << std::dec << thread_ts() << "@ ";
+        std::cout << std::dec << apicall_ret.ts << "@ ";
         std::cout << std::dec << thread_info.id << "] ";
+        std::cout << std::dec << "s:" << std::dec << apicall_ret.s_depth << " ";
         apicall_ret.Dump();
     }
 }
@@ -610,8 +614,9 @@ void
 LogRunner::OnBB(thread_info_c &thread_info, df_stackitem_c &last_bb)
 {
     if (show_options_ & LR_SHOW_BB) {
-        std::cout << std::dec << thread_ts() << "@ ";
+        std::cout << std::dec << last_bb.ts << "@ ";
         std::cout << std::dec << thread_info.id << "] ";
+        std::cout << std::dec << "s:" << std::dec << last_bb.s_depth << " ";
         last_bb.Dump();
     }
 }
@@ -843,7 +848,7 @@ LogRunner::Dump(int indent)
         std::cout << _tab << "info_threads_[" << kv.first << "] : " << std::endl;
         kv.second.Dump(indent + 2);
     }
-    std::cout << _tab << "it_thread_: " << std::dec << it_thread_->second.id <<  std::endl;
+    std::cout << _tab << "it_thread_: " << std::dec << it_thread_->first <<  std::endl;
     std::cout << _tab << std::dec << "thread_ts_: " << thread_ts_ <<  std::endl;
     std::cout << _tab << "bb_counts_: " << bb_counts_ <<  std::endl;
 }
@@ -1024,6 +1029,7 @@ df_apicall_c::SaveState(std::ostream &out)
     write_str(out, name);
     write_u32(out, ret_addr);
     write_u64(out, ts);
+    write_u32(out, s_depth);
 
     write_u32(out, callargs.size());
 
@@ -1060,6 +1066,7 @@ df_apicall_c::RestoreState(std::istream &in)
     name = read_str(in);
     ret_addr = read_u32(in);
     ts = read_u64(in);
+    s_depth = read_u32(in);
 
     callargs.clear();
     for (int i = read_u32(in); i; i--) {
@@ -1138,6 +1145,7 @@ void df_stackitem_c::SaveState(std::ostream &out)
     write_u32(out, next);
     write_u32(out, link);
     write_u64(out, ts);
+    write_u32(out, s_depth);
 }
 
 void df_stackitem_c::RestoreState(std::istream &in)
@@ -1150,4 +1158,5 @@ void df_stackitem_c::RestoreState(std::istream &in)
     next = read_u32(in);
     link = read_u32(in);
     ts = read_u64(in);
+    s_depth = read_u32(in);
 }
