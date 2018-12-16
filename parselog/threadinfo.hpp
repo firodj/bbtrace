@@ -9,9 +9,10 @@ public:
     std::vector<std::string> callstrings;
     std::vector<uint> retargs;
     std::vector<std::string> retstrings;
+    uint64 ts;
     df_apicall_c():
-        func(0), ret_addr(0) {}
-    void Dump();
+        func(0), ret_addr(0), ts(0) {}
+    void Dump(int indent = 0);
     void SaveState(std::ostream &out);
     void RestoreState(std::istream &in);
 };
@@ -22,7 +23,10 @@ public:
     app_pc pc;
     app_pc next;
     uint link;
-    void Dump();
+    uint64 ts;
+    df_stackitem_c():
+        pc(0), ts(0) {}
+    void Dump(int indent = 0);
     void SaveState(std::ostream &out);
     void RestoreState(std::istream &in);
 };
@@ -66,7 +70,7 @@ public:
         running_ts(0),
         last_kind(KIND_NONE) {}
 
-    void Dump();
+    void Dump(int indent = 0);
     void SaveState(std::ostream &out);
     void RestoreState(std::istream &in);
 };

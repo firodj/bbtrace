@@ -152,6 +152,8 @@ main(int argc, PCHAR* argv)
                 frun.open(oss.str(), std::ofstream::in | std::ofstream::binary);
                 std::cout << "Reading from " << oss.str() << std::endl;
                 runner.RestoreState(frun);
+
+                runner.Dump();
             }
         }
 

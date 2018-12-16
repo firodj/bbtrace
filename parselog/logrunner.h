@@ -6,6 +6,9 @@
 #include "logparser.h"
 #include "threadinfo.hpp"
 
+#define LR_SHOW_BB 0x1
+#define LR_SHOW_LIBCALL 0x2
+
 typedef std::map<uint, uint> map_uint_uint_t;
 typedef std::map<app_pc, std::string> map_app_pc_string_t;
 
@@ -25,7 +28,8 @@ private:
     uint64 bb_counts_;
 
 protected:
-    virtual void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
+    void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
+    void DoEndBB(thread_info_c &thread_info /* , bb mem read/write */);
     void DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym);
     void DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall);
     void DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret);
@@ -34,7 +38,9 @@ protected:
     void DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
-    virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
+
+    virtual void OnApiCall(thread_info_c &thread_info, df_apicall_c &apicall_ret);
+    virtual void OnBB(thread_info_c &thread_info, df_stackitem_c &last_bb);
 
 public:
     LogRunner(): show_options_(0), thread_ts_(0) {}
@@ -63,7 +69,6 @@ public:
 
     void ApiCallRet(thread_info_c &thread_info);
 
-    void DoEndBB(thread_info_c &thread_info /* , bb mem read/write */);
     void OnCreateThread(df_apicall_c &apicall);
     void OnResumeThread(df_apicall_c &apicall);
 
@@ -80,6 +85,7 @@ public:
 
     void SaveSymbols(std::ostream &out);
     void SaveState(std::ostream &out);
+    void Dump(int indent = 0);
 
     void RestoreSymbols(std::istream &in);
     void RestoreState(std::istream &in);

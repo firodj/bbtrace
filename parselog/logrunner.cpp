@@ -10,9 +10,6 @@
 #include "logrunner.h"
 #include "serializer.h"
 
-#define LR_SHOW_BB 0x1
-#define LR_SHOW_LIBCALL 0x2
-
 bool
 LogRunner::Open(std::string &filename) {
     filename_ = filename;
@@ -281,6 +278,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     thread_info.last_bb.pc   = buf_bb.pc;
     thread_info.last_bb.next = next_bb;
     thread_info.last_bb.link = bb_link;
+    thread_info.last_bb.ts   = thread_ts_;
 
     if (bb_link == LINK_CALL) {
         thread_info.stacks.push_back(df_stackitem_c());
@@ -341,6 +339,7 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
     thread_info.apicall_now->ret_addr = buf_libcall.ret_addr;
     thread_info.apicall_now->name = name;
     thread_info.apicall_now->callargs.push_back((uint)buf_libcall.arg);
+    thread_info.apicall_now->ts = thread_ts_;
 }
 
 void
@@ -565,33 +564,19 @@ LogRunner::ThreadWaitMutex(thread_info_c &thread_info)
 }
 
 void
-df_apicall_c::Dump()
+LogRunner::OnApiCall(thread_info_c &thread_info, df_apicall_c &apicall_ret)
 {
-    std::cout << "call " << name << "@" << func << "( ";
-    for (auto carg: callargs) {
-        std::cout << std::dec << carg << ", ";
-    }
-    for (auto cstr: callstrings) {
-        std::cout << cstr << ", ";
-    }
-    std::cout << ") -> { ";
-    for (auto rarg: retargs) {
-        std::cout << std::dec << rarg << ", ";
-    }
-    for (auto rstr: retstrings) {
-        std::cout << rstr << ", ";
-    }
-    std::cout << "} => 0x" << std::hex << ret_addr << std::endl;
-}
-
-void
-LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
-{
+    bool verbose = show_options_ & LR_SHOW_LIBCALL;
+    if (!verbose)
     for (auto filter_addr : filter_apicall_addrs_) {
         if (filter_addr == apicall_ret.func) {
-            std::cout << std::dec << thread_id << "] ";
-            apicall_ret.Dump();
+            verbose = true; break;
         }
+    }
+    if (verbose) {
+        std::cout << std::dec << thread_ts() << "@ ";
+        std::cout << std::dec << thread_info.id << "] ";
+        apicall_ret.Dump();
     }
 }
 
@@ -602,22 +587,33 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
     thread_info.apicalls.pop_back();
     thread_info.apicall_now = nullptr;
 
+    // these api calls are mandatory for sync
     if (apicall_ret.name == "CreateThread")
         OnCreateThread(apicall_ret);
     else if (apicall_ret.name == "ResumeThread")
         OnResumeThread(apicall_ret);
 
-    OnApiCall(thread_info.id, apicall_ret);
+    OnApiCall(thread_info, apicall_ret);
 }
 
 void
 LogRunner::DoEndBB(thread_info_c &thread_info /* , bb mem read/write */)
 {
-    if (show_options_ & LR_SHOW_BB) {
-        std::cout << std::dec << thread_info.id << "] ";
-        std::cout << "bb 0x" << std::hex << thread_info.within_bb << std::endl;
-    }
+    if (thread_info.within_bb != thread_info.last_bb.pc) {
+        throw std::runtime_error("Mismatch last_bb with within_bb !");
+    } 
+    OnBB(thread_info, thread_info.last_bb);
     thread_info.within_bb = 0;
+}
+
+void
+LogRunner::OnBB(thread_info_c &thread_info, df_stackitem_c &last_bb)
+{
+    if (show_options_ & LR_SHOW_BB) {
+        std::cout << std::dec << thread_ts() << "@ ";
+        std::cout << std::dec << thread_info.id << "] ";
+        last_bb.Dump();
+    }
 }
 
 void
@@ -707,39 +703,6 @@ LogRunner::Summary()
     std::cout << "thread ts: " << thread_ts_ << std::endl;
 }
 
-void thread_info_c::Dump()
-{
-    std::cout << "id: " << id << std::endl;
-    std::cout << "running: " << running << std::endl;
-    std::cout << "finished: " << finished << std::endl;
-
-    std::cout << "last_kind: " << last_kind;
-    if (last_kind)
-        std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
-    std::cout << std::endl;
-
-    std::cout << "hevent_wait: " << hevent_wait << std::endl;
-    std::cout << "hevent_seq: " << hevent_seq << std::endl;
-    std::cout << "hmutex_wait: " << hmutex_wait << std::endl;
-    std::cout << "hmutex_seq: " << hmutex_seq << std::endl;
-    std::cout << "critsec_wait: " << critsec_wait << std::endl;
-    std::cout << "critsec_seq: " << critsec_seq << std::endl;
-    std::cout << "filepos: " << filepos << std::endl;
-    std::cout << "within_bb: " << within_bb << std::endl;
-    std::cout << "bb_count: " << bb_count << std::endl;
-    std::cout << "running_ts: " << running_ts << std::endl;
-
-    int j = -1;
-    for (uint i = 0; i < apicalls.size(); ++i) {
-        df_apicall_c &apicall_cur = apicalls[i];
-        std::cout << "apicalls[" << i << "]: ";
-        apicall_cur.Dump();
-
-        if (apicall_now == &apicall_cur) j = i;
-    }
-    std::cout << "apicall_now: " << std::dec << j << std::endl;
-}
-
 void
 LogRunner::SaveSymbols(std::ostream &out)
 {
@@ -771,15 +734,12 @@ LogRunner::RestoreSymbols(std::istream &in)
 void
 LogRunner::SaveState(std::ostream &out)
 {
-    bool const verbose = true;
-
     out << "wait";
     write_u32(out, wait_seqs_.size());
 
     for (auto it : wait_seqs_) {
         write_u32(out, it.first);
         write_u32(out, it.second);
-        if (verbose) std::cout << "wait_seqs_, " << it.first << ": " <<it.second << std::endl;
     }
 
     out << "crit";
@@ -788,7 +748,6 @@ LogRunner::SaveState(std::ostream &out)
     for (auto it : critsec_seqs_) {
         write_u32(out, it.first);
         write_u32(out, it.second);
-        if (verbose) std::cout << "critsec_seqs_, " << it.first << ": " <<it.second << std::endl;
     }
 
     out << "thrd";
@@ -799,49 +758,47 @@ LogRunner::SaveState(std::ostream &out)
 
         write_u32(out, it->first);
 
-        if (verbose) std::cout << "info_threads_, #" << it->first << " ";
         thread_info.SaveState(out);
     }
 
     write_u32(out, it_thread_->first);
-    if (verbose) std::cout << "it_thread_: " << it_thread_->first <<  std::endl;
 
     write_u64(out, thread_ts_);
-    if (verbose) std::cout << "thread_ts_: " << thread_ts_ <<  std::endl;
     
     write_u64(out, bb_counts_);
-    if (verbose) std::cout << "bb_counts_: " << bb_counts_ <<  std::endl;
 }
 
 void
 LogRunner::RestoreState(std::istream &in)
 {
-    const bool verbose = true;
+    if (filename_.empty())
+        return;
 
-    if (filename_.empty()) return;
+    if (!read_match(in, "wait"))
+        throw std::runtime_error("mismatch marker 'wait'");
 
-    if (!read_match(in, "wait")) return;
     wait_seqs_.clear();
 
     for(int i = read_u32(in); i; i--) {
         uint32_t first = read_u32(in);
         uint32_t second = read_u32(in);
         wait_seqs_[first] = second;
-
-        if (verbose) std::cout << "wait_seqs_, " << first << ": " << second << std::endl;
     }
 
-    if (!read_match(in, "crit")) return;
+    if (!read_match(in, "crit"))
+        throw std::runtime_error("mismatch marker 'crit'");
+
     critsec_seqs_.clear();
 
     for(int i = read_u32(in); i; i--) {
         uint32_t first = read_u32(in);
         uint32_t second = read_u32(in);
         critsec_seqs_[first] = second;
-        if (verbose) std::cout << "critsec_seqs_, " << first << ": " << second << std::endl;
     }
 
-    if (!read_match(in, "thrd")) return;
+    if (!read_match(in, "thrd"))
+        throw std::runtime_error("mismatch marker 'thrd'");
+
     info_threads_.clear();
 
     for(int i = read_u32(in); i; i--) {
@@ -857,36 +814,46 @@ LogRunner::RestoreState(std::istream &in)
             thread_info.logparser.open(oss.str().c_str());
         }
 
-        std::cout << "info_threads_, #" << first << " " << thread_info.logparser.filename() << " ";
-
         thread_info.RestoreState(in);
         thread_info.logparser.seek(thread_info.filepos);
     }
 
     uint32_t thread_id = read_u32(in);
-    std::cout << "it_thread_: " << std::dec << thread_id <<  std::endl;
 
     it_thread_ = info_threads_.find(thread_id);
-    if (it_thread_ == info_threads_.end()) {
-        std::cout << "ERROR: don't know current thread" << std::endl;
-    }
+    if (it_thread_ == info_threads_.end())
+        throw std::runtime_error("ERROR: don't know current thread");
 
     thread_ts_ = read_u64(in);
-    if (verbose) std::cout << std::dec << "thread_ts_: " << thread_ts_ <<  std::endl;
-
     bb_counts_ = read_u64(in);
-    if (verbose) std::cout << "bb_counts_: " << bb_counts_ <<  std::endl;
+}
+
+void
+LogRunner::Dump(int indent)
+{
+    std::string _tab = std::string(indent, ' ');
+
+    for (auto &kv : wait_seqs_) {
+        std::cout << _tab << "wait_seqs_[" << kv.first << "] : " << kv.second << std::endl;
+    }
+    for (auto &kv : critsec_seqs_) {
+        std::cout << _tab << "critsec_seqs_[" << kv.first << "] : " << kv.second << std::endl;
+    }
+    for (auto &kv : info_threads_) {
+        std::cout << _tab << "info_threads_[" << kv.first << "] : " << std::endl;
+        kv.second.Dump(indent + 2);
+    }
+    std::cout << _tab << "it_thread_: " << std::dec << it_thread_->second.id <<  std::endl;
+    std::cout << _tab << std::dec << "thread_ts_: " << thread_ts_ <<  std::endl;
+    std::cout << _tab << "bb_counts_: " << bb_counts_ <<  std::endl;
 }
 
 void
 thread_info_c::SaveState(std::ostream &out)
 {
-    const bool verbose = true;
-
     out << "info";
 
     write_u32(out, id);
-    if (verbose) std::cout << "id: " << id << std::endl;
 
     write_bool(out, running);
 
@@ -907,7 +874,6 @@ thread_info_c::SaveState(std::ostream &out)
     write_u32(out, critsec_seq);
 
     write_u64(out, filepos);
-    if (verbose) std::cout << "filepos: " << filepos << std::endl;
 
     write_u32(out, within_bb);
 
@@ -940,59 +906,30 @@ thread_info_c::SaveState(std::ostream &out)
     if (pending_state) {
         write_data(out, (char*)&pending_bb, 16);
     }
+
+    last_bb.SaveState(out);
 }
 
 void
 thread_info_c::RestoreState(std::istream &in)
 {
-    const bool verbose = true;
-
-    if (!read_match(in, "info")) return;
+    if (!read_match(in, "info"))
+        throw std::runtime_error("mismatch marker 'info'");
 
     id = read_u32(in);
-    std::cout << "id: " << std::dec << id << std::endl;
-
     running = read_bool(in);
-    if (verbose) std::cout << "  running     : " << running << std::endl;
-
     finished = read_bool(in);
-    if (verbose) std::cout << "  finished    : " << finished << std::endl;
 
     last_kind = read_u32(in);
-    if (verbose) {
-        std::cout << "  last_kind   : " << last_kind;
-        if (last_kind)
-           std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
-        std::cout << std::endl;
-    }
-
     hevent_wait = read_u32(in);
-    if (verbose) std::cout << "  hevent_wait : " << hevent_wait << std::endl;
-
     hevent_seq = read_u32(in);
-    if (verbose) std::cout << "  hevent_seq  : " << hevent_seq << std::endl;
-
     hmutex_wait = read_u32(in);
-    if (verbose) std::cout << "  hmutex_wait : " << hmutex_wait << std::endl;
-
     hmutex_seq = read_u32(in);
-    if (verbose) std::cout << "  hmutex_seq  : " << hmutex_seq << std::endl;
-
     critsec_wait = read_u32(in);
-    if (verbose) std::cout << "  critsec_wait: " << critsec_wait << std::endl;
-
     critsec_seq = read_u32(in);
-    if (verbose) std::cout << "  critsec_seq : " << critsec_seq << std::endl;
-
     filepos = read_u64(in);
-    if (verbose) std::cout << "  filepos     : " << filepos << std::endl;
-
     within_bb = (app_pc)read_u32(in);
-    if (verbose) std::cout << "  within_bb   : 0x" << std::hex << within_bb << std::endl;
-
     bb_count = read_u32(in);
-    if (verbose) std::cout << "  bb_count    : " << std::dec << bb_count << std::endl;
-
     running_ts = read_u64(in);
 
     apicalls.clear();
@@ -1001,16 +938,11 @@ thread_info_c::RestoreState(std::istream &in)
         i; i--) {
         apicalls.push_back(df_apicall_c());
         apicall_now = &apicalls.back();
-
-        if (verbose) std::cout << "  apicalls, " << i << ": ";
-
         apicall_now->RestoreState(in);
     }
 
     int j = (signed)read_u32(in); // apicall_now
     apicall_now = j == -1 ? nullptr : &apicalls[j];
-
-    if (verbose) std::cout << "  apicall_now : " << std::dec << j << std::endl;
 
     stacks.clear();
     
@@ -1018,9 +950,6 @@ thread_info_c::RestoreState(std::istream &in)
         i; i--) {
         stacks.push_back(df_stackitem_c());
         df_stackitem_c *stackitem_cur = &stacks.back();
-
-        if (verbose) std::cout << "  stacks, " << i << ": ";
-
         stackitem_cur->RestoreState(in);
     }
 
@@ -1029,6 +958,61 @@ thread_info_c::RestoreState(std::istream &in)
     if (pending_state) {
         read_data(in, (char*)&pending_bb, 16);
     }
+
+    last_bb.RestoreState(in);
+}
+
+void
+thread_info_c::Dump(int indent)
+{
+    std::string _tab = std::string(indent, ' ');
+
+    std::cout << _tab << "thread id: " << std::dec << id << std::endl;
+    std::cout << _tab << "filename: " << logparser.filename() << std::endl;
+    std::cout << _tab << "running: " << running << std::endl;
+    std::cout << _tab << "finished: " << finished << std::endl;
+
+    std::cout << _tab << "last_kind:0x" << std::hex << last_kind << std::dec;
+    if (last_kind)
+        std::cout << " '" << std::string((char*)&last_kind, 4) << "' ";
+    std::cout << std::endl;
+
+    std::cout << _tab <<  "hevent_wait: " << hevent_wait;
+    std::cout << _tab <<  "  hevent_seq: " << hevent_seq << std::endl;
+    std::cout << _tab <<  "hmutex_wait: " << hmutex_wait;
+    std::cout << _tab <<  "  hmutex_seq: " << hmutex_seq << std::endl;
+    std::cout << _tab <<  "critsec_wait: " << critsec_wait;
+    std::cout << _tab <<  "  critsec_seq: " << critsec_seq << std::endl;
+    std::cout << _tab <<  "filepos: " << filepos << std::endl;
+    std::cout << _tab <<  "within_bb: 0x" << std::hex << within_bb << std::endl;
+    std::cout << _tab <<  "bb_count: " << std::dec << bb_count << std::endl;
+    std::cout << _tab <<  "running_ts: " << running_ts << std::endl;
+
+    int j = -1;
+    for (uint i = 0; i < apicalls.size(); ++i) {
+        df_apicall_c &apicall_cur = apicalls[i];
+        std::cout <<  _tab << "  apicalls[" << i << "]: ";
+        apicall_cur.Dump(indent + 2);
+
+        if (apicall_now == &apicall_cur) j = i;
+    }
+    std::cout << _tab << "apicall_now: " << std::dec << j << std::endl;
+
+    for (uint i = 0; i < stacks.size(); ++i) {
+        df_stackitem_c &stackitem_cur = stacks[i];
+        std::cout <<  _tab << "  stacks[" << i << "]: ";
+        stackitem_cur.Dump(indent + 2);
+    }
+
+    std::cout << _tab << "pending_state: " << pending_state << std::endl;
+    if (pending_state) {
+        std::cout << _tab << "  pending_bb.kind:0x" << std::hex << pending_bb.kind;
+        if (pending_bb.kind)
+            std::cout << " '" << std::string((char*)&pending_bb.kind, 4) << "' ";
+        std::cout << std::endl;
+    }
+    std::cout << _tab << "last_bb: ";
+    last_bb.Dump(indent + 2);
 }
 
 void
@@ -1039,6 +1023,7 @@ df_apicall_c::SaveState(std::ostream &out)
     write_u32(out, func);
     write_str(out, name);
     write_u32(out, ret_addr);
+    write_u64(out, ts);
 
     write_u32(out, callargs.size());
 
@@ -1065,57 +1050,85 @@ df_apicall_c::SaveState(std::ostream &out)
     }
 }
 
-
 void
 df_apicall_c::RestoreState(std::istream &in)
 {
-    const bool verbose = true;
-
-    if (!read_match(in, "call")) return;
+    if (!read_match(in, "call")) 
+        throw std::runtime_error("mismatch marker 'call'");
 
     func = read_u32(in);
     name = read_str(in);
     ret_addr = read_u32(in);
-
-    if (verbose) std::cout << "call " << name << "@" << func << "( ";
+    ts = read_u64(in);
 
     callargs.clear();
     for (int i = read_u32(in); i; i--) {
         int carg = read_u32(in);
         callargs.push_back(carg);
-        if (verbose) std::cout << std::dec << carg << ", ";
     }
 
     callstrings.clear();
     for (int i = read_u32(in); i; i--) {
         std::string cstr = read_str(in);
         callstrings.push_back(cstr);
-        std::cout << cstr << ", ";
     }
-
-    if (verbose) std::cout << ") -> { ";
 
     retargs.clear();
     for (int i = read_u32(in); i; i--) {
         int rarg = read_u32(in);
         retargs.push_back(rarg);
-        if (verbose) std::cout << std::dec << rarg << ", ";
     }
 
     retstrings.clear();
     for (int i = read_u32(in); i; i--) {
         std::string rstr = read_str(in);
         retstrings.push_back(rstr);
-        if (verbose) std::cout << rstr << ", ";
     }
-
-    if (verbose) std::cout << "} => 0x" << std::hex << ret_addr << std::endl;
 }
 
-void df_stackitem_c::Dump()
+void
+df_apicall_c::Dump(int indent)
 {
+    std::string _tab = std::string(indent, ' ');
 
+    std::cout << _tab << "call " << name << "@" << func << "( ";
+    for (auto carg: callargs) {
+        std::cout << std::dec << carg << ", ";
+    }
+    for (auto cstr: callstrings) {
+        std::cout << cstr << ", ";
+    }
+    std::cout << ") -> { ";
+    for (auto rarg: retargs) {
+        std::cout << std::dec << rarg << ", ";
+    }
+    for (auto rstr: retstrings) {
+        std::cout << rstr << ", ";
+    }
+    std::cout << "} => 0x" << std::hex << ret_addr;
+    std::cout << " ts:" << std::dec << ts;
+    std::cout << std::endl;
 }
+
+void
+df_stackitem_c::Dump(int indent)
+{
+    std::string _tab = std::string(indent, ' ');
+
+    std::cout << _tab << "kind:0x" << std::hex << kind;
+    if (kind)
+        std::cout << " '" << std::string((char*)&kind, 4) << "'";
+    std::cout << " pc:0x" << std::hex << pc << " next:0x" << next << " " << std::dec;
+    switch (link) {
+        case LINK_CALL: std::cout << "CALL"; break;
+        case LINK_RETURN: std::cout << "RETURN"; break;
+        case LINK_JMP: std::cout << "JMP"; break;
+        default: std::cout << link;
+    }
+    std::cout << " ts:" << std::dec << ts;
+    std::cout << std::endl;
+}
+
 void df_stackitem_c::SaveState(std::ostream &out)
 {
     out << "stem";
@@ -1124,30 +1137,17 @@ void df_stackitem_c::SaveState(std::ostream &out)
     write_u32(out, pc);
     write_u32(out, next);
     write_u32(out, link);
+    write_u64(out, ts);
 }
 
 void df_stackitem_c::RestoreState(std::istream &in)
 {
-    const bool verbose = true;
-
-    if (!read_match(in, "stem")) return;
+    if (!read_match(in, "stem"))
+        throw std::runtime_error("mismatch marker 'stem'");
 
     kind = read_u32(in);
     pc = read_u32(in);
     next = read_u32(in);
     link = read_u32(in);
-
-    if (verbose) {
-        std::cout << kind;
-        if (kind)
-            std::cout << " '" << std::string((char*)&kind, 4) << "'";
-        std::cout << " pc:0x" << std::hex << pc << " next:0x" << next << " " << std::dec;
-        switch (link) {
-            case LINK_CALL: std::cout << "CALL"; break;
-            case LINK_RETURN: std::cout << "RETURN"; break;
-            case LINK_JMP: std::cout << "JMP"; break;
-            default: std::cout << link;
-        }
-        std::cout << std::endl;
-    }
+    ts = read_u64(in);
 }
