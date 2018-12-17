@@ -10,6 +10,7 @@
 #define LR_SHOW_LIBCALL 0x2
 
 typedef std::map<uint, uint> map_uint_uint_t;
+typedef std::map<uint, uint64> map_uint_uint64_t;
 typedef std::map<app_pc, std::string> map_app_pc_string_t;
 
 class LogRunner
@@ -18,6 +19,9 @@ private:
     map_app_pc_string_t symbol_names_;
     map_uint_uint_t wait_seqs_; // hmutex / hevent
     map_uint_uint_t critsec_seqs_; // critsec
+    map_uint_uint64_t wait_seqs_ts_;
+    map_uint_uint64_t critsec_seqs_ts_;
+
     std::map<uint, thread_info_c> info_threads_;
     std::map<uint, thread_info_c>::iterator it_thread_;
     std::string filename_;
@@ -36,7 +40,6 @@ protected:
     void DoKindArgs(thread_info_c &thread_info, buf_event_t &buf_args);
     void DoKindString(thread_info_c &thread_info, buf_string_t &buf_str);
     void DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync);
-    void DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
 
     virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
@@ -55,6 +58,7 @@ public:
     void FinishThread(thread_info_c &thread_info);
 
     bool Step();
+    bool ThreadStep(thread_info_c &thread_info);
 
     void ThreadWaitCritSec(thread_info_c &thread_info);
     void ThreadWaitEvent(thread_info_c &thread_info);
@@ -69,8 +73,8 @@ public:
 
     void ApiCallRet(thread_info_c &thread_info);
 
-    void OnCreateThread(df_apicall_c &apicall);
-    void OnResumeThread(df_apicall_c &apicall);
+    void OnCreateThread(df_apicall_c &apicall, uint64 ts);
+    void OnResumeThread(df_apicall_c &apicall, uint64 ts);
 
     void Summary();
 

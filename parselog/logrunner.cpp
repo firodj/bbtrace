@@ -61,12 +61,30 @@ LogRunner::Step()
             it_thread_ = info_threads_.begin();
             thread_ts_++;
         }
-        if (it_thread_->second.finished)
+
+        thread_info_c &thread_info = it_thread_->second;
+
+        if (thread_info.finished)
             continue;
-        if (!it_thread_->second.running)
-            CheckPending(it_thread_->second);
-        if (it_thread_->second.running && thread_ts_ > it_thread_->second.running_ts)
-            break;
+        if (!thread_info.running)
+            CheckPending(thread_info);
+        if (thread_info.running) {
+            if (thread_ts_ > thread_info.running_ts) {
+                if (thread_ts_ - thread_info.running_ts == 1) { // ASSERT
+#if 0
+                    std::cout << std::dec << thread_info.id << "] ";
+                    std::cout << "Resume thread_ts: " << thread_ts_;
+                    std::cout << "  ts:" << thread_info.now_ts;
+                    std::cout << "  running_ts:" << thread_info.running_ts;
+
+                    thread_info.now_ts = thread_info.running_ts;
+
+                    std::cout << std::endl;
+#endif
+                }
+                break;
+            }
+        }
     }
 
     if (inactive == info_threads_.size()) {
@@ -76,6 +94,32 @@ LogRunner::Step()
     uint thread_id = it_thread_->first;
     thread_info_c &thread_info = it_thread_->second;
     auto it_next = std::next(it_thread_, 1);
+
+    if (! ThreadStep(thread_info)) {
+        info_threads_.erase(it_thread_);
+    }
+
+    it_thread_ = it_next;
+
+    return true;
+}
+
+/**
+ * return true when continue to process event.
+ *        false when finish.
+ */
+bool
+LogRunner::ThreadStep(thread_info_c &thread_info)
+{
+    thread_info.now_ts++;
+
+    if ( thread_info.now_ts != thread_ts_ ) {
+        std::cout << "thread id:" << std::dec << thread_info.id;
+        std::cout << "  now_ts: " << thread_info.now_ts;
+        std::cout << "  thread_ts_: " << thread_ts_;
+        std::cout << std::endl;
+        throw std::runtime_error("now_ts != thread_ts_");
+    }
 
     while (thread_info.running) {
         uint kind;
@@ -110,8 +154,7 @@ LogRunner::Step()
 
         if (!item) {
             FinishThread(thread_info);
-            info_threads_.erase(it_thread_);
-            break;
+            return false;
         }
         kind = *(uint*)item;
         mem_ref_t *buf_bb;
@@ -197,8 +240,6 @@ LogRunner::Step()
         }
     }
 
-    it_thread_ = it_next;
-
     return true;
 }
 
@@ -272,7 +313,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
                     std::cout << " " << libret_last.name;
                     std::cout << " Ret:0x " << std::hex << libret_last.ret_addr;
                 }
-                std::cout << " (A:" << std::dec << thread_ts_ << ")";
+                std::cout << " (A:" << std::dec << thread_ts_ << " B: " << thread_info.now_ts << ")";
                 std::cout << std::endl;
 
                 //throw std::runtime_error ("DIE!");
@@ -285,7 +326,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     thread_info.last_bb.next = next_bb;
     thread_info.last_bb.link = bb_link;
     thread_info.last_bb.is_sub = bb_is_sub;
-    thread_info.last_bb.ts   = thread_ts_;
+    thread_info.last_bb.ts   = thread_info.now_ts;
     thread_info.last_bb.s_depth = thread_info.stacks.size();
 
     if (bb_link == LINK_CALL) {
@@ -348,7 +389,7 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
     thread_info.apicall_now->ret_addr = buf_libcall.ret_addr;
     thread_info.apicall_now->name = name;
     thread_info.apicall_now->callargs.push_back((uint)buf_libcall.arg);
-    thread_info.apicall_now->ts = thread_ts_;
+    thread_info.apicall_now->ts = thread_info.now_ts;
     thread_info.apicall_now->s_depth = s_depth;
 }
 
@@ -456,10 +497,15 @@ LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync)
     uint seq = buf_sync.params[1];
 
     map_uint_uint_t *p_wait_seqs = &wait_seqs_;
-    if (sync_kind == SYNC_CRITSEC) p_wait_seqs = &critsec_seqs_;
-
+    map_uint_uint64_t *p_wait_seqs_ts = &wait_seqs_ts_;
+    if (sync_kind == SYNC_CRITSEC) {
+        p_wait_seqs = &critsec_seqs_;
+        p_wait_seqs_ts = &critsec_seqs_ts_;
+    }
+    // TODO: Mutex r/w
     if ((*p_wait_seqs)[wait] == seq - 1) {
         (*p_wait_seqs)[wait] = seq;
+        (*p_wait_seqs_ts)[wait] = thread_info.now_ts +1;
     } else {
         switch (sync_kind) {
         case SYNC_EVENT:
@@ -497,18 +543,6 @@ LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync)
 }
 
 void
-LogRunner::DoKindCritSec(thread_info_c &thread_info, buf_event_t &buf_sync)
-{
-    uint wait = buf_sync.params[0];
-    uint seq = buf_sync.params[1];
-
-    if (critsec_seqs_[wait] == seq - 1) {
-        critsec_seqs_[wait] = seq;
-    } else {
-    }
-}
-
-void
 LogRunner::DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc)
 {
     uint umsg = buf_wndproc.params[0];
@@ -528,12 +562,22 @@ LogRunner::ThreadWaitCritSec(thread_info_c &thread_info)
     if (thread_info.critsec_wait) {
         if (critsec_seqs_[thread_info.critsec_wait] == thread_info.critsec_seq - 1) {
             critsec_seqs_[thread_info.critsec_wait] = thread_info.critsec_seq;
+
+            uint64 ts = critsec_seqs_ts_[thread_info.critsec_wait];
+
 #if 0
+            std::cout << std::dec << thread_info.id << "] CritSec";
+            std::cout << " thread_ts_ = " << thread_ts_;
+            std::cout << " ts = " << ts;
+            std::cout << std::endl;
+
             std::cout << std::dec << thread_info.id << "] ";
             std::cout << "thread continue - event: #" << std::dec << thread_info.critsec_wait << std::endl;
+            std::cout << "thread continue - event: #" << std::dec << thread_info.now_ts << std::endl;
 #endif
             thread_info.running = true;
-            thread_info.running_ts = thread_ts_;
+            thread_info.running_ts = ts; //thread_ts_;
+            thread_info.now_ts = ts;
             thread_info.critsec_wait = 0;
         }
     }
@@ -545,12 +589,19 @@ LogRunner::ThreadWaitEvent(thread_info_c &thread_info)
     if (thread_info.hevent_wait) {
         if (wait_seqs_[thread_info.hevent_wait] == thread_info.hevent_seq - 1) {
             wait_seqs_[thread_info.hevent_wait] = thread_info.hevent_seq;
+            uint64 ts = wait_seqs_ts_[thread_info.hevent_wait];
 #if 0
+            std::cout << std::dec << thread_info.id << "] Event ";
+            std::cout << " thread_ts_ = " << thread_ts_;
+            std::cout << " ts = " << ts;
+            std::cout << std::endl;
+
             std::cout << std::dec << thread_info.id << "] ";
             std::cout << "thread continue - event: #" << std::dec << thread_info.hevent_wait << std::endl;
 #endif
             thread_info.running = true;
-            thread_info.running_ts = thread_ts_;
+            thread_info.running_ts = ts; // thread_ts_;
+            thread_info.now_ts = ts;
             thread_info.hevent_wait = 0;
         }
     }
@@ -562,12 +613,20 @@ LogRunner::ThreadWaitMutex(thread_info_c &thread_info)
     if (thread_info.hmutex_wait) {
         if (wait_seqs_[thread_info.hmutex_wait] == thread_info.hmutex_seq - 1) {
             wait_seqs_[thread_info.hmutex_wait] = thread_info.hmutex_seq;
+            uint64 ts = wait_seqs_ts_[thread_info.hmutex_wait];
+
 #if 0
+            std::cout << std::dec << thread_info.id << "] Mutex ";
+            std::cout << " thread_ts_ = " << thread_ts_;
+            std::cout << " ts = " << ts;
+            std::cout << std::endl;
+
             std::cout << std::dec << thread_info.id << "] ";
             std::cout << "thread continue - mutex: #" << std::dec << thread_info.hmutex_wait << std::endl;
 #endif
             thread_info.running = true;
-            thread_info.running_ts = thread_ts_;
+            thread_info.running_ts = ts; // thread_ts_
+            thread_info.now_ts = ts;
             thread_info.hmutex_wait = 0;
         }
     }
@@ -600,9 +659,9 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
 
     // these api calls are mandatory for sync
     if (apicall_ret.name == "CreateThread")
-        OnCreateThread(apicall_ret);
+        OnCreateThread(apicall_ret, thread_info.now_ts);
     else if (apicall_ret.name == "ResumeThread")
-        OnResumeThread(apicall_ret);
+        OnResumeThread(apicall_ret, thread_info.now_ts);
 
     OnApiCall(thread_info.id, apicall_ret);
 }
@@ -629,7 +688,7 @@ LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb)
 }
 
 void
-LogRunner::OnCreateThread(df_apicall_c &apicall)
+LogRunner::OnCreateThread(df_apicall_c &apicall, uint64 ts)
 {
     uint new_thread_id = apicall.retargs[1];
     bool new_suspended = (apicall.callargs[3] & 0x4) == 0x4;
@@ -646,9 +705,10 @@ LogRunner::OnCreateThread(df_apicall_c &apicall)
             info_threads_[new_thread_id].finished = true;
         } else {
             info_threads_[new_thread_id].running = new_suspended ? false : true;
+            info_threads_[new_thread_id].now_ts = ts;
 
             if (info_threads_[new_thread_id].running) {
-                info_threads_[new_thread_id].running_ts = thread_ts_;
+                info_threads_[new_thread_id].running_ts = ts;
                 std::cout << std::dec << new_thread_id << "] ";
                 std::cout << "thread starting." << std::endl;
             } else {
@@ -666,14 +726,15 @@ LogRunner::OnCreateThread(df_apicall_c &apicall)
 }
 
 void
-LogRunner::OnResumeThread(df_apicall_c &apicall)
+LogRunner::OnResumeThread(df_apicall_c &apicall, uint64 ts)
 {
     uint resume_thread_id = apicall.retargs[1];
     if (info_threads_.find(resume_thread_id) != info_threads_.end()) {
         info_threads_[resume_thread_id].running = true;
-        info_threads_[resume_thread_id].running_ts = thread_ts_;
+        info_threads_[resume_thread_id].running_ts = ts;
+        info_threads_[resume_thread_id].now_ts = ts;
         std::cout << std::dec << resume_thread_id << "] ";
-        std::cout << "thread resuming (A:" << thread_ts_ << ")" << std::endl;
+        std::cout << "thread resuming (A:" << thread_ts_ << " B:" << ts << ")" << std::endl;
     }
 }
 void
@@ -892,6 +953,7 @@ thread_info_c::SaveState(std::ostream &out)
     write_u32(out, bb_count);
 
     write_u64(out, running_ts);
+    write_u64(out, now_ts);
 
     write_u32(out, apicalls.size());
 
@@ -943,6 +1005,7 @@ thread_info_c::RestoreState(std::istream &in)
     within_bb = (app_pc)read_u32(in);
     bb_count = read_u32(in);
     running_ts = read_u64(in);
+    now_ts = read_u64(in);
 
     apicalls.clear();
 
@@ -1001,6 +1064,7 @@ thread_info_c::Dump(int indent)
     std::cout << _tab <<  "within_bb: 0x" << std::hex << within_bb << std::endl;
     std::cout << _tab <<  "bb_count: " << std::dec << bb_count << std::endl;
     std::cout << _tab <<  "running_ts: " << running_ts << std::endl;
+    std::cout << _tab <<  "now_ts: " << now_ts << std::endl;
 
     int j = -1;
     for (uint i = 0; i < apicalls.size(); ++i) {

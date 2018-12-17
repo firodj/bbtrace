@@ -62,6 +62,7 @@ public:
     uint id;
     uint bb_count;
     uint64 running_ts;
+    uint64 now_ts;
 
     thread_info_c():
         running(false),
@@ -75,8 +76,10 @@ public:
         within_bb(0),
         id(0),
         bb_count(0),
+        last_kind(KIND_NONE),
         running_ts(0),
-        last_kind(KIND_NONE) {}
+        now_ts(0)
+        {}
 
     void Dump(int indent = 0);
     void SaveState(std::ostream &out);
