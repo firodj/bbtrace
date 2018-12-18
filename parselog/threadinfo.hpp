@@ -65,11 +65,9 @@ public:
     app_pc within_bb;
     uint id;
     uint bb_count;
-    uint64 running_ts;
     uint64 now_ts;
     std::unique_ptr<std::thread> the_thread;
     LogRunner* the_runner;
-
 
     thread_info_c():
         running(false),
@@ -84,7 +82,6 @@ public:
         id(0),
         bb_count(0),
         last_kind(KIND_NONE),
-        running_ts(0),
         now_ts(0),
         the_thread(nullptr),
         the_runner(nullptr)

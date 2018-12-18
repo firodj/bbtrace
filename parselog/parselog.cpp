@@ -39,9 +39,8 @@ public:
 void signal_handler(int signal)
 {
     gSignalStatus = signal;
-    std::string data;
     if (g_runner)
-    g_runner->PostMessage(0, MSG_STOP, data);
+        g_runner->RequestToStop();
 }
 
 std::string
@@ -80,6 +79,7 @@ main(int argc, PCHAR* argv)
 
     uint opt_memtrack = 0;
     bool opt_input_state = false;
+    bool opt_use_multithread = false;
 
     std::vector<std::string> opt_procnames;
 
@@ -88,7 +88,7 @@ main(int argc, PCHAR* argv)
         if (argn && *argn == '-')
           argn++;
         else {
-          filename = argv[1];
+          filename = argv[a];
           continue;
         }
 
@@ -104,8 +104,8 @@ main(int argc, PCHAR* argv)
             }
         } else
         if (opt_name == "m") {
-            if (++a < argc) {
-                opt_memtrack = std::strtoul(argv[a], nullptr, 0);
+            if (a+1 < argc && argv[a+1] && *argv[a+1] != '-') {
+                opt_memtrack = std::strtoul(argv[++a], nullptr, 0);
                 if (!opt_memtrack) {
                     std::cout << "Invalid memory addr!" << std::endl;
                     return 1;
@@ -118,16 +118,11 @@ main(int argc, PCHAR* argv)
         } else
         if (opt_name == "i") {
             opt_input_state = true;
-            /*
-            if (++a < argc) {
-                argv[a];
-            } else {
-                std::cout << "Please provide running state";
-                return 1;
-            }
-            */
+        } else
+        if (opt_name == "j") {
+            opt_use_multithread = true;
         } else {
-            std::cout << "Unknown option:" << opt_name << std::endl;
+            std::cout << "Unknown option: '" << opt_name << "'" << std::endl;
             return 1;
         }
     }
@@ -159,7 +154,7 @@ main(int argc, PCHAR* argv)
                 std::cout << "Reading from " << oss.str() << std::endl;
                 runner.RestoreState(frun);
 
-                runner.Dump();
+                //runner.Dump();
             }
         }
 
@@ -169,11 +164,10 @@ main(int argc, PCHAR* argv)
         // runner.SetOptions( LR_SHOW_BB | LR_SHOW_LIBCALL);
 
         auto start = std::chrono::system_clock::now();
-        runner.Run();
-
-        // while (runner.Step() && gSignalStatus == 0)
-        //     ;
-
+        if (opt_use_multithread)
+            runner.RunMT();
+        else
+            runner.Run();
         auto end = std::chrono::system_clock::now();
 
         if (gSignalStatus) {

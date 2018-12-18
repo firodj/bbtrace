@@ -22,10 +22,8 @@ enum RunnerMessageType {
     MSG_UNDEFINED = 0,
     MSG_CREATE_THREAD,
     MSG_RESUME_THREAD,
-    MSG_API_CALL,
-    MSG_BB_END,
     MSG_THREAD_FINISHED,
-    MSG_STOP
+    MSG_REQUEST_STOP
 };
 
 struct runner_message_t {
@@ -38,13 +36,12 @@ struct sync_sequence_t {
 public:
     uint seq;
     uint64 ts;
-    std::mutex mx;
-    std::condition_variable cv;
     
     sync_sequence_t(): seq(0), ts(0) {}
 };
 
 typedef std::map<uint, sync_sequence_t> map_sync_sequence_t;
+typedef std::map<uint, thread_info_c> map_thread_info_t;
 
 class LogRunner
 {
@@ -53,20 +50,18 @@ private:
     map_sync_sequence_t wait_seqs_; // hmutex / hevent
     map_sync_sequence_t critsec_seqs_; // critsec
 
-    std::map<uint, thread_info_c> info_threads_;
-    std::map<uint, thread_info_c>::iterator it_thread_;
+    map_thread_info_t info_threads_;
     std::string filename_;
     uint show_options_;
     std::vector<uint> filter_apicall_addrs_;
     std::vector<std::string> filter_apicall_names_;
-    uint64 thread_ts_;
-    uint64 bb_counts_;
 
     std::mutex message_mu_;
     std::condition_variable message_cv_;
     std::queue<runner_message_t> messages_;
 
     bool request_stop_;
+    bool is_multithread_;
 
 protected:
     void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
@@ -83,7 +78,7 @@ protected:
     virtual void OnBB(uint thread_id, df_stackitem_c &last_bb);
 
 public:
-    LogRunner(): show_options_(0), thread_ts_(0) {}
+    LogRunner(): show_options_(0) {}
 
     bool Open(std::string &filename);
 
@@ -94,22 +89,26 @@ public:
 
     void FinishThread(thread_info_c &thread_info);
 
-    bool Step();
+    bool Step(map_thread_info_t::iterator &it_thread);
     bool ThreadStep(thread_info_c &thread_info);
 
     bool Run();
+    bool RunMT();
     static void ThreadRun(thread_info_c &thread_info);
     void PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data);
+    void RequestToStop();
 
     void ThreadWaitCritSec(thread_info_c &thread_info);
     void ThreadWaitEvent(thread_info_c &thread_info);
     void ThreadWaitMutex(thread_info_c &thread_info);
+    void ThreadWaitRunning(thread_info_c &thread_info);
 
     void CheckPending(thread_info_c &thread_info)
     {
         ThreadWaitCritSec(thread_info);
         ThreadWaitEvent(thread_info);
         ThreadWaitMutex(thread_info);
+        ThreadWaitRunning(thread_info);
     }
 
     void ApiCallRet(thread_info_c &thread_info);
@@ -118,10 +117,6 @@ public:
     void OnResumeThread(df_apicall_c &apicall, uint64 ts);
 
     void Summary();
-
-    uint64& thread_ts() {
-        return thread_ts_;
-    }
 
     void FilterApiCall(std::string &name)
     {
@@ -134,4 +129,7 @@ public:
 
     void RestoreSymbols(std::istream &in);
     void RestoreState(std::istream &in);
+
+    std::mutex resume_mx_;
+    std::condition_variable resume_cv_;
 };
