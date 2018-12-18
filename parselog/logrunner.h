@@ -34,14 +34,24 @@ struct runner_message_t {
     std::string data;
 };
 
+struct sync_sequence_t {
+public:
+    uint seq;
+    uint64 ts;
+    std::mutex mx;
+    std::condition_variable cv;
+    
+    sync_sequence_t(): seq(0), ts(0) {}
+};
+
+typedef std::map<uint, sync_sequence_t> map_sync_sequence_t;
+
 class LogRunner
 {
 private:
     map_app_pc_string_t symbol_names_;
-    map_uint_uint_t wait_seqs_; // hmutex / hevent
-    map_uint_uint_t critsec_seqs_; // critsec
-    map_uint_uint64_t wait_seqs_ts_;
-    map_uint_uint64_t critsec_seqs_ts_;
+    map_sync_sequence_t wait_seqs_; // hmutex / hevent
+    map_sync_sequence_t critsec_seqs_; // critsec
 
     std::map<uint, thread_info_c> info_threads_;
     std::map<uint, thread_info_c>::iterator it_thread_;
@@ -82,7 +92,7 @@ public:
         show_options_ = show_options;
     }
 
-    void FinishThread(thread_info_c &thread_info, bool is_finished);
+    void FinishThread(thread_info_c &thread_info);
 
     bool Step();
     bool ThreadStep(thread_info_c &thread_info);

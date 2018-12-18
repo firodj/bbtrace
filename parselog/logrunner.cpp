@@ -36,7 +36,7 @@ LogRunner::Open(std::string &filename) {
 }
 
 void
-LogRunner::FinishThread(thread_info_c &thread_info, bool is_finished)
+LogRunner::FinishThread(thread_info_c &thread_info)
 {
     while (! thread_info.apicalls.empty()) {
         thread_info.apicall_now = &thread_info.apicalls.back();
@@ -46,16 +46,7 @@ LogRunner::FinishThread(thread_info_c &thread_info, bool is_finished)
     if (thread_info.within_bb) {
         DoEndBB(thread_info /* , bb mem read/write */);
     }
-
-    std::cout << std::dec << thread_info.id << "] ";
-
-    if (is_finished) {
-        thread_info.finished = true;
-        std::cout << "finished!! ";
-    }
-    bb_counts_ += thread_info.bb_count;
-    if (thread_info.now_ts > thread_ts_) thread_ts_ = thread_info.now_ts;
-    std::cout << "bb count: " << thread_info.bb_count << std::endl;
+    thread_info.within_bb = 0;
 }
 
 bool
@@ -163,7 +154,7 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
         }
 
         if (!item) {
-            FinishThread(thread_info, true);
+            thread_info.finished = true;
             return false;
         }
         kind = *(uint*)item;
@@ -322,6 +313,12 @@ bool LogRunner::Run()
                     break;
                 case MSG_STOP: {
                         request_stop_ = true;
+                        for (auto &it : wait_seqs_) {
+                            it.second.cv.notify_all();
+                        }
+                        for (auto &it : critsec_seqs_) {
+                            it.second.cv.notify_all();
+                        }
                     }
                     break;
                 default:
@@ -347,6 +344,8 @@ void LogRunner::ThreadRun(thread_info_c &thread_info)
     std::string data;
     
     thread_info.the_runner->PostMessage(thread_info.id, MSG_THREAD_FINISHED, data);
+
+    thread_info.the_runner->FinishThread(thread_info);
 }
 
 void
@@ -602,50 +601,62 @@ LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync)
     uint wait = buf_sync.params[0];
     uint seq = buf_sync.params[1];
 
-    map_uint_uint_t *p_wait_seqs = &wait_seqs_;
-    map_uint_uint64_t *p_wait_seqs_ts = &wait_seqs_ts_;
+    map_sync_sequence_t *p_wait_seqs = &wait_seqs_;
     if (sync_kind == SYNC_CRITSEC) {
         p_wait_seqs = &critsec_seqs_;
-        p_wait_seqs_ts = &critsec_seqs_ts_;
     }
-    // TODO: Mutex r/w
-    if ((*p_wait_seqs)[wait] == seq - 1) {
-        (*p_wait_seqs)[wait] = seq;
-        (*p_wait_seqs_ts)[wait] = thread_info.now_ts +1;
+
+    bool non_suspend = false;    
+    sync_sequence_t &ss = (*p_wait_seqs)[wait];
+
+    {
+        std::lock_guard<std::mutex> lk( ss.mx );
+
+        non_suspend = ss.seq == (seq - 1);
+
+        if (non_suspend) {
+            ss.seq = seq;
+            ss.ts = thread_info.now_ts +1;
+        }
+    }
+
+    if (non_suspend) {
+        ;
     } else {
         switch (sync_kind) {
-        case SYNC_EVENT:
+        case SYNC_EVENT: {
+            std::lock_guard<std::mutex> lk( ss.mx );
             thread_info.hevent_wait = wait;
             thread_info.hevent_seq = seq;
             thread_info.running = false;
-#if 0
-            std::cout << std::dec << thread_info.id << "] ";
-            std::cout << "thread pause - event #" << std::dec << wait
-                << " !" << seq << std::endl;
-#endif
+            // std::cout << std::dec << thread_info.id << "] ";
+            // std::cout << "thread pause - event #" << std::dec << wait
+            //     << " !" << seq << std::endl;
+            }
             break;
-        case SYNC_MUTEX:
+        case SYNC_MUTEX: {
+            std::lock_guard<std::mutex> lk( ss.mx );
             thread_info.hmutex_wait = wait;
             thread_info.hmutex_seq = seq;
             thread_info.running = false;
-#if 0
-            std::cout << std::dec << thread_info.id << "] ";
-            std::cout << "thread pause - mutex #" << std::dec << wait
-                << " !" << seq << std::endl;
-#endif
+            // std::cout << std::dec << thread_info.id << "] ";
+            // std::cout << "thread pause - mutex #" << std::dec << wait
+            //     << " !" << seq << std::endl;
+            }
             break;
-        case SYNC_CRITSEC:
+        case SYNC_CRITSEC: {
+            std::lock_guard<std::mutex> lk( ss.mx );
             thread_info.critsec_wait = wait;
             thread_info.critsec_seq = seq;
             thread_info.running = false;
-#if 0
-            std::cout << std::dec << thread_info.id << "] ";
-            std::cout << "thread pause - critsec #" << std::dec << wait
-                << " !" << seq << std::endl;
-#endif
+            // std::cout << std::dec << thread_info.id << "] ";
+            // std::cout << "thread pause - critsec #" << std::dec << wait
+            //     << " !" << seq << std::endl;
+            }
             break;
         }
     }
+    ss.cv.notify_all();
 }
 
 void
@@ -666,26 +677,29 @@ void
 LogRunner::ThreadWaitCritSec(thread_info_c &thread_info)
 {
     if (thread_info.critsec_wait) {
-        if (critsec_seqs_[thread_info.critsec_wait] == thread_info.critsec_seq - 1) {
-            critsec_seqs_[thread_info.critsec_wait] = thread_info.critsec_seq;
+        sync_sequence_t &ss = critsec_seqs_[thread_info.critsec_wait];
+        std::unique_lock<std::mutex> lk(ss.mx);
+        ss.cv.wait(lk, [&]{ return ss.seq == thread_info.critsec_seq - 1 || thread_info.the_runner->request_stop_; });
 
-            uint64 ts = critsec_seqs_ts_[thread_info.critsec_wait];
+        if (thread_info.the_runner->request_stop_) return;
+        //if (critsec_seqs_[thread_info.critsec_wait].seq == thread_info.critsec_seq - 1) {
+            ss.seq = thread_info.critsec_seq;
+            uint64 ts = ss.ts;
 
-#if 0
-            std::cout << std::dec << thread_info.id << "] CritSec";
-            std::cout << " thread_ts_ = " << thread_ts_;
-            std::cout << " ts = " << ts;
-            std::cout << std::endl;
+            // std::cout << std::dec << thread_info.id << "] CritSec";
+            // std::cout << " thread_ts_ = " << thread_ts_;
+            // std::cout << " ts = " << ts;
+            // std::cout << std::endl;
 
-            std::cout << std::dec << thread_info.id << "] ";
-            std::cout << "thread continue - event: #" << std::dec << thread_info.critsec_wait << std::endl;
-            std::cout << "thread continue - event: #" << std::dec << thread_info.now_ts << std::endl;
-#endif
+            // std::cout << std::dec << thread_info.id << "] ";
+            // std::cout << "thread continue - event: #" << std::dec << thread_info.critsec_wait << std::endl;
+            // std::cout << "thread continue - event: #" << std::dec << thread_info.now_ts << std::endl;
+
             thread_info.running = true;
             thread_info.running_ts = ts; //thread_ts_;
             thread_info.now_ts = ts;
             thread_info.critsec_wait = 0;
-        }
+        //}
     }
 }
 
@@ -693,23 +707,28 @@ void
 LogRunner::ThreadWaitEvent(thread_info_c &thread_info)
 {
     if (thread_info.hevent_wait) {
-        if (wait_seqs_[thread_info.hevent_wait] == thread_info.hevent_seq - 1) {
-            wait_seqs_[thread_info.hevent_wait] = thread_info.hevent_seq;
-            uint64 ts = wait_seqs_ts_[thread_info.hevent_wait];
-#if 0
-            std::cout << std::dec << thread_info.id << "] Event ";
-            std::cout << " thread_ts_ = " << thread_ts_;
-            std::cout << " ts = " << ts;
-            std::cout << std::endl;
+        sync_sequence_t &ss = wait_seqs_[thread_info.hevent_wait];
+        std::unique_lock<std::mutex> lk(ss.mx);
+        ss.cv.wait(lk, [&]{ return ss.seq == thread_info.hevent_seq - 1 || thread_info.the_runner->request_stop_; });
 
-            std::cout << std::dec << thread_info.id << "] ";
-            std::cout << "thread continue - event: #" << std::dec << thread_info.hevent_wait << std::endl;
-#endif
+        if (thread_info.the_runner->request_stop_) return;
+        //if (wait_seqs_[thread_info.hevent_wait].seq == thread_info.hevent_seq - 1) {
+            ss.seq = thread_info.hevent_seq;
+            uint64 ts = ss.ts;
+
+            // std::cout << std::dec << thread_info.id << "] Event ";
+            // std::cout << " thread_ts_ = " << thread_ts_;
+            // std::cout << " ts = " << ts;
+            // std::cout << std::endl;
+
+            // std::cout << std::dec << thread_info.id << "] ";
+            // std::cout << "thread continue - event: #" << std::dec << thread_info.hevent_wait << std::endl;
+
             thread_info.running = true;
             thread_info.running_ts = ts; // thread_ts_;
             thread_info.now_ts = ts;
             thread_info.hevent_wait = 0;
-        }
+        // }
     }
 }
 
@@ -717,24 +736,29 @@ void
 LogRunner::ThreadWaitMutex(thread_info_c &thread_info)
 {
     if (thread_info.hmutex_wait) {
-        if (wait_seqs_[thread_info.hmutex_wait] == thread_info.hmutex_seq - 1) {
-            wait_seqs_[thread_info.hmutex_wait] = thread_info.hmutex_seq;
-            uint64 ts = wait_seqs_ts_[thread_info.hmutex_wait];
+        sync_sequence_t &ss = wait_seqs_[thread_info.hmutex_wait];
+        std::unique_lock<std::mutex> lk(ss.mx);
+        ss.cv.wait(lk, [&]{ return ss.seq == thread_info.hmutex_seq - 1 || thread_info.the_runner->request_stop_; });
 
-#if 0
-            std::cout << std::dec << thread_info.id << "] Mutex ";
-            std::cout << " thread_ts_ = " << thread_ts_;
-            std::cout << " ts = " << ts;
-            std::cout << std::endl;
+        if (thread_info.the_runner->request_stop_) return;
 
-            std::cout << std::dec << thread_info.id << "] ";
-            std::cout << "thread continue - mutex: #" << std::dec << thread_info.hmutex_wait << std::endl;
-#endif
+        // if (wait_seqs_[thread_info.hmutex_wait].seq == thread_info.hmutex_seq - 1) {
+            ss.seq = thread_info.hmutex_seq;
+            uint64 ts = ss.ts;
+
+            // std::cout << std::dec << thread_info.id << "] Mutex ";
+            // std::cout << " thread_ts_ = " << thread_ts_;
+            // std::cout << " ts = " << ts;
+            // std::cout << std::endl;
+
+            // std::cout << std::dec << thread_info.id << "] ";
+            // std::cout << "thread continue - mutex: #" << std::dec << thread_info.hmutex_wait << std::endl;
+
             thread_info.running = true;
             thread_info.running_ts = ts; // thread_ts_
             thread_info.now_ts = ts;
             thread_info.hmutex_wait = 0;
-        }
+        // }
     }
 }
 
@@ -891,11 +915,15 @@ void
 LogRunner::Summary()
 {
     uint bb_counts = 0;
+    uint64 max_ts = 0;
 
     // Summary
-    for (auto it = info_threads_.begin(); it != info_threads_.end(); ++it) {
-        uint thread_id = it->first;
-        thread_info_c &thread_info = it->second;
+    for (auto &it : info_threads_) {
+        uint thread_id = it.first;
+        thread_info_c &thread_info = it.second;
+
+        bb_counts += thread_info.bb_count;
+        if (thread_info.now_ts > max_ts) max_ts = thread_info.now_ts;
 
         if (!thread_info.finished) {
             std::cout << std::dec << thread_id << "] thread not finished!";
@@ -905,25 +933,23 @@ LogRunner::Summary()
                 std::cout << " suspended";
                 if (thread_info.hevent_wait) {
                     std::cout << " event #" << thread_info.hevent_wait << " at " << thread_info.hevent_seq;
-                    std::cout << " of " << wait_seqs_[thread_info.hevent_wait];
+                    std::cout << " of " << wait_seqs_[thread_info.hevent_wait].seq;
                 }
                 if (thread_info.hmutex_wait) {
                     std::cout << " mutex #" << thread_info.hmutex_wait << " at " << thread_info.hmutex_seq;
-                    std::cout << " of " << wait_seqs_[thread_info.hmutex_wait];
+                    std::cout << " of " << wait_seqs_[thread_info.hmutex_wait].seq;
                 }
                 if (thread_info.critsec_wait) {
                     std::cout << " critsec #" << thread_info.critsec_wait << " at " << thread_info.critsec_seq;
-                    std::cout << " of " << critsec_seqs_[thread_info.critsec_wait];
+                    std::cout << " of " << critsec_seqs_[thread_info.critsec_wait].seq;
                 }
             }
             std::cout << std::endl;
-
-            FinishThread(thread_info, false);
         }
     }
 
-    std::cout << "bb counts: " << bb_counts_ << std::endl;
-    std::cout << "thread ts: " << thread_ts_ << std::endl;
+    std::cout << "bb counts: " << bb_counts << std::endl;
+    std::cout << "max ts: " << max_ts << std::endl;
 }
 
 void
@@ -933,7 +959,7 @@ LogRunner::SaveSymbols(std::ostream &out)
 
     write_u32(out, symbol_names_.size());
 
-    for (auto it : symbol_names_) {
+    for (auto &it : symbol_names_) {
         write_u32(out, it.first);
         write_str(out, it.second);
     }
@@ -960,26 +986,28 @@ LogRunner::SaveState(std::ostream &out)
     out << "wait";
     write_u32(out, wait_seqs_.size());
 
-    for (auto it : wait_seqs_) {
+    for (auto &it : wait_seqs_) {
         write_u32(out, it.first);
-        write_u32(out, it.second);
+        write_u32(out, it.second.seq);
+        write_u64(out, it.second.ts);
     }
 
     out << "crit";
     write_u32(out, critsec_seqs_.size());
 
-    for (auto it : critsec_seqs_) {
+    for (auto &it : critsec_seqs_) {
         write_u32(out, it.first);
-        write_u32(out, it.second);
+        write_u32(out, it.second.seq);
+        write_u64(out, it.second.ts);
     }
 
     out << "thrd";
     write_u32(out, info_threads_.size());
 
-    for (auto it = info_threads_.begin(); it != info_threads_.end(); ++it) {
-        thread_info_c &thread_info = it->second;
+    for (auto &it : info_threads_) {
+        thread_info_c &thread_info = it.second;
 
-        write_u32(out, it->first);
+        write_u32(out, it.first);
 
         thread_info.SaveState(out);
     }
@@ -1004,8 +1032,10 @@ LogRunner::RestoreState(std::istream &in)
 
     for(int i = read_u32(in); i; i--) {
         uint32_t first = read_u32(in);
-        uint32_t second = read_u32(in);
-        wait_seqs_[first] = second;
+        uint32_t seq = read_u32(in);
+        uint64_t ts = read_u64(in);
+        wait_seqs_[first].seq = seq;
+        wait_seqs_[first].ts = ts;
     }
 
     if (!read_match(in, "crit"))
@@ -1015,8 +1045,10 @@ LogRunner::RestoreState(std::istream &in)
 
     for(int i = read_u32(in); i; i--) {
         uint32_t first = read_u32(in);
-        uint32_t second = read_u32(in);
-        critsec_seqs_[first] = second;
+        uint32_t seq = read_u32(in);
+        uint64_t ts = read_u64(in);
+        critsec_seqs_[first].seq = seq;
+        critsec_seqs_[first].ts = ts;
     }
 
     if (!read_match(in, "thrd"))
@@ -1057,10 +1089,10 @@ LogRunner::Dump(int indent)
     std::string _tab = std::string(indent, ' ');
 
     for (auto &kv : wait_seqs_) {
-        std::cout << _tab << "wait_seqs_[" << kv.first << "] : " << kv.second << std::endl;
+        std::cout << _tab << "wait_seqs_[" << kv.first << "] : " << kv.second.seq << std::endl;
     }
     for (auto &kv : critsec_seqs_) {
-        std::cout << _tab << "critsec_seqs_[" << kv.first << "] : " << kv.second << std::endl;
+        std::cout << _tab << "critsec_seqs_[" << kv.first << "] : " << kv.second.seq << std::endl;
     }
     for (auto &kv : info_threads_) {
         std::cout << _tab << "info_threads_[" << kv.first << "] : " << std::endl;
