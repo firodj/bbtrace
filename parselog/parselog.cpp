@@ -20,6 +20,7 @@
 #include "logrunner.h"
 
 volatile std::sig_atomic_t gSignalStatus;
+static LogRunner *g_runner = nullptr;
 
 class AutoPause {
 public:
@@ -38,6 +39,9 @@ public:
 void signal_handler(int signal)
 {
     gSignalStatus = signal;
+    std::string data;
+    if (g_runner)
+    g_runner->PostMessage(0, MSG_STOP, data);
 }
 
 std::string
@@ -132,6 +136,8 @@ main(int argc, PCHAR* argv)
     std::signal(SIGINT, signal_handler);
 
     LogRunner runner;
+    g_runner = &runner;
+
     if (runner.Open(filename)) {
         if (opt_input_state) {
             uint sav_cnt = get_available_states(filename);
@@ -160,10 +166,14 @@ main(int argc, PCHAR* argv)
         for (auto name : opt_procnames)
             runner.FilterApiCall(name);
         runner.SetOptions(0);
+        // runner.SetOptions( LR_SHOW_BB | LR_SHOW_LIBCALL);
 
         auto start = std::chrono::system_clock::now();
-        while (runner.Step() && gSignalStatus == 0)
-            ;
+        runner.Run();
+
+        // while (runner.Step() && gSignalStatus == 0)
+        //     ;
+
         auto end = std::chrono::system_clock::now();
 
         if (gSignalStatus) {

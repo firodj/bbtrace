@@ -1,5 +1,7 @@
 #pragma once
 
+#include <thread>
+
 class df_apicall_c {
 public:
     app_pc func;
@@ -39,6 +41,8 @@ public:
     void RestoreState(std::istream &in);
 };
 
+class LogRunner;
+
 class thread_info_c {
 public:
     logparser_c logparser;
@@ -63,6 +67,9 @@ public:
     uint bb_count;
     uint64 running_ts;
     uint64 now_ts;
+    std::unique_ptr<std::thread> the_thread;
+    LogRunner* the_runner;
+
 
     thread_info_c():
         running(false),
@@ -78,7 +85,9 @@ public:
         bb_count(0),
         last_kind(KIND_NONE),
         running_ts(0),
-        now_ts(0)
+        now_ts(0),
+        the_thread(nullptr),
+        the_runner(nullptr)
         {}
 
     void Dump(int indent = 0);

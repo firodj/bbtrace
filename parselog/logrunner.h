@@ -1,5 +1,10 @@
 #pragma once
 
+#include <mutex>
+#include <condition_variable>
+#include <sstream>
+#include <queue>
+
 #define WITHOUT_DR
 #include "datatypes.h"
 
@@ -12,6 +17,22 @@
 typedef std::map<uint, uint> map_uint_uint_t;
 typedef std::map<uint, uint64> map_uint_uint64_t;
 typedef std::map<app_pc, std::string> map_app_pc_string_t;
+
+enum RunnerMessageType {
+    MSG_UNDEFINED = 0,
+    MSG_CREATE_THREAD,
+    MSG_RESUME_THREAD,
+    MSG_API_CALL,
+    MSG_BB_END,
+    MSG_THREAD_FINISHED,
+    MSG_STOP
+};
+
+struct runner_message_t {
+    uint thread_id;
+    RunnerMessageType msg_type;
+    std::string data;
+};
 
 class LogRunner
 {
@@ -30,6 +51,12 @@ private:
     std::vector<std::string> filter_apicall_names_;
     uint64 thread_ts_;
     uint64 bb_counts_;
+
+    std::mutex message_mu_;
+    std::condition_variable message_cv_;
+    std::queue<runner_message_t> messages_;
+
+    bool request_stop_;
 
 protected:
     void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
@@ -55,10 +82,14 @@ public:
         show_options_ = show_options;
     }
 
-    void FinishThread(thread_info_c &thread_info);
+    void FinishThread(thread_info_c &thread_info, bool is_finished);
 
     bool Step();
     bool ThreadStep(thread_info_c &thread_info);
+
+    bool Run();
+    static void ThreadRun(thread_info_c &thread_info);
+    void PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data);
 
     void ThreadWaitCritSec(thread_info_c &thread_info);
     void ThreadWaitEvent(thread_info_c &thread_info);
