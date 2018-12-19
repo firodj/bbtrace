@@ -141,7 +141,7 @@ main(int argc, PCHAR* argv)
                 oss << get_states_name(filename, sav_cnt-1) << ".symbols";
 
                 std::ifstream fsymb;
-                fsymb.open(oss.str(), std::ofstream::in | std::ofstream::binary);
+                fsymb.open(oss.str(), std::ifstream::in | std::ifstream::binary);
                 std::cout << "Reading from " << oss.str() << std::endl;
                 runner.RestoreSymbols(fsymb);
 
@@ -150,7 +150,7 @@ main(int argc, PCHAR* argv)
                 oss << get_states_name(filename, sav_cnt-1);
 
                 std::ifstream frun;
-                frun.open(oss.str(), std::ofstream::in | std::ofstream::binary);
+                frun.open(oss.str(), std::ifstream::in | std::ifstream::binary);
                 std::cout << "Reading from " << oss.str() << std::endl;
                 runner.RestoreState(frun);
 

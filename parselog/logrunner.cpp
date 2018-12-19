@@ -79,6 +79,8 @@ LogRunner::Step(map_thread_info_t::iterator &it_thread)
 
     if (! ThreadStep(thread_info)) {
         assert(thread_info.finished);
+        thread_stats_c &thread_stats = stats_threads_[thread_info.id];
+        thread_stats.Apply(thread_info);
         info_threads_.erase(it_current);
     }
 
@@ -273,8 +275,11 @@ bool LogRunner::RunMT()
                     thread_info.the_thread->join();
                     thread_info.the_thread.reset();
                     assert(thread_info.the_thread == nullptr);
-                    if (thread_info.finished)
+                    if (thread_info.finished) {
+                        thread_stats_c &thread_stats = stats_threads_[thread_info.id];
+                        thread_stats.Apply(thread_info);
                         info_threads_.erase(message.thread_id);
+                    }
 
                     if ( std::all_of(info_threads_.begin(), 
                         info_threads_.end(), 
@@ -822,16 +827,18 @@ LogRunner::OnCreateThread(df_apicall_c &apicall, uint64 ts)
         std::ostringstream oss;
         oss << filename_ << "." << std::dec << new_thread_id;
 
-        info_threads_[new_thread_id].now_ts = ts;
-        info_threads_[new_thread_id].the_runner = this;
+        thread_info_c &thread_info = info_threads_[new_thread_id];
 
-        if (! info_threads_[new_thread_id].logparser.open(oss.str().c_str())) {
+        thread_info.now_ts = ts;
+        thread_info.the_runner = this;
+
+        if (! thread_info.logparser.open(oss.str().c_str())) {
             std::cout << "Fail to open .bin: " << oss.str() << std::endl;
-            info_threads_[new_thread_id].finished = true;
+            thread_info.finished = true;
         } else {
-            info_threads_[new_thread_id].running = new_suspended ? false : true;
+            thread_info.running = new_suspended ? false : true;
 
-            if (info_threads_[new_thread_id].running) {
+            if (thread_info.running) {
                 std::cout << std::dec << new_thread_id << "] ";
                 std::cout << "thread starting." << std::endl;
             } else {
@@ -840,14 +847,16 @@ LogRunner::OnCreateThread(df_apicall_c &apicall, uint64 ts)
             }
         }
 
-        if (info_threads_[new_thread_id].finished) {
+        if (thread_info.finished) {
+            thread_stats_c &thread_stats = stats_threads_[new_thread_id];
+            thread_stats.Apply(thread_info);
             info_threads_.erase(new_thread_id);
         } else {
-            info_threads_[new_thread_id].id = new_thread_id;
+            thread_info.id = new_thread_id;
             if (is_multithread_) {
-                assert(info_threads_[new_thread_id].the_thread == nullptr);
-                info_threads_[new_thread_id].the_thread = std::unique_ptr<std::thread>(
-                    new std::thread(LogRunner::ThreadRun, std::ref(info_threads_[new_thread_id]))
+                assert(thread_info.the_thread == nullptr);
+                thread_info.the_thread = std::unique_ptr<std::thread>(
+                    new std::thread(LogRunner::ThreadRun, std::ref(thread_info))
                     );
             }
         }
@@ -874,16 +883,13 @@ LogRunner::OnResumeThread(df_apicall_c &apicall, uint64 ts)
 void
 LogRunner::Summary()
 {
-    uint bb_counts = 0;
-    uint64 max_ts = 0;
-
     // Summary
     for (auto &it : info_threads_) {
         uint thread_id = it.first;
         thread_info_c &thread_info = it.second;
 
-        bb_counts += thread_info.bb_count;
-        if (thread_info.now_ts > max_ts) max_ts = thread_info.now_ts;
+        thread_stats_c &thread_stats = stats_threads_[thread_info.id];
+        thread_stats.Apply(thread_info);
 
         if (!thread_info.finished) {
             std::cout << std::dec << thread_id << "] thread not finished!";
@@ -906,6 +912,13 @@ LogRunner::Summary()
             }
             std::cout << std::endl;
         }
+    }
+    
+    uint bb_counts = 0;
+    uint64 max_ts = 0;
+    for (auto &it: stats_threads_) {
+        bb_counts += it.second.bb_counts;
+        if (max_ts < it.second.ts) max_ts = it.second.ts;
     }
 
     std::cout << "bb counts: " << bb_counts << std::endl;

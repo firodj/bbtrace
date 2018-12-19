@@ -40,8 +40,24 @@ public:
     sync_sequence_t(): seq(0), ts(0) {}
 };
 
+struct thread_stats_c {
+public:
+    uint bb_counts;
+    uint64 ts;
+
+    thread_stats_c(): bb_counts(0), ts(0) {}
+
+    void
+    Apply(thread_info_c &thread_info)
+    {
+        bb_counts = thread_info.bb_count;
+        ts = thread_info.now_ts;
+    }
+};
+
 typedef std::map<uint, sync_sequence_t> map_sync_sequence_t;
 typedef std::map<uint, thread_info_c> map_thread_info_t;
+typedef std::map<uint, thread_stats_c> map_thread_stats_t;
 
 class LogRunner
 {
@@ -50,20 +66,21 @@ private:
     map_sync_sequence_t wait_seqs_; // hmutex / hevent
     map_sync_sequence_t critsec_seqs_; // critsec
 
+    std::mutex message_mu_;
+    std::condition_variable message_cv_;
+    std::queue<runner_message_t> messages_;
+
+protected:
     map_thread_info_t info_threads_;
+    map_thread_stats_t stats_threads_;
     std::string filename_;
     uint show_options_;
     std::vector<uint> filter_apicall_addrs_;
     std::vector<std::string> filter_apicall_names_;
 
-    std::mutex message_mu_;
-    std::condition_variable message_cv_;
-    std::queue<runner_message_t> messages_;
-
     bool request_stop_;
     bool is_multithread_;
 
-protected:
     void DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb);
     void DoEndBB(thread_info_c &thread_info /* , bb mem read/write */);
     void DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym);
