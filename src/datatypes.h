@@ -32,7 +32,8 @@
 // #define KIND_CRITSEC 0x74697243
 #define KIND_ARGS 0x73677241
 #define KIND_BB 0x6B6C6242
-#define KIND_LOOP 0x706F6F4C
+#define KIND_LOOP 0x706F6F4C // 'Loop'
+#define KIND_STOP 0x504F5453 // 'Stop' (loop-stop unused)
 #define KIND_SYNC 0x636E7953  // 'Sync'
 
 #define SYNC_MUTEX 0x7874754D // 'Mutx'

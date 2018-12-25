@@ -133,6 +133,10 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
         }
         kind = *(uint*)item;
         mem_ref_t *buf_bb;
+        buf_exception_t *buf_exc;
+        buf_module_t *buf_mod;
+
+        // std::cout << std::dec << thread_info.id << "] " << std::dec << thread_info.now_ts << " KIND: " << std::string((char*)&kind, 4) << std::endl;
 
         switch (kind) {
             case KIND_BB:
@@ -153,22 +157,36 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
                     DoKindBB(thread_info, *(mem_ref_t*)item);
                 }
                 break;
-            case KIND_LOOP:
-                // mem_ref_t *buf_item = reinterpret_cast<mem_ref_t*>(item);
+            case KIND_LOOP: {
+                    uint mem_kind = thread_info.logparser.peek();
+                    if (mem_kind != KIND_WRITE && mem_kind != KIND_READ)
+                        throw std::runtime_error("loop for ?");
+                    thread_info.pending_loop = *reinterpret_cast<mem_ref_t*>(item);
+                }
+                // buf_bb = reinterpret_cast<mem_ref_t*>(item);
+                // std::cout << thread_info.id << "] 0x" << std::hex << buf_bb->pc << " addr: 0x" << buf_bb->addr
+                //     << " size: " << std::dec << buf_bb->size << std::endl;
                 break;
             case KIND_READ:
-                // mem_ref_t *buf_item = reinterpret_cast<mem_ref_t*>(item);
+                buf_bb = reinterpret_cast<mem_ref_t*>(item);
+                DoMemRW(thread_info, *(mem_ref_t*)item);
                 break;
             case KIND_WRITE:
-                // mem_ref_t *buf_item = reinterpret_cast<mem_ref_t*>(item);
+                buf_bb = reinterpret_cast<mem_ref_t*>(item);
+                DoMemRW(thread_info, *(mem_ref_t*)item);
                 break;
             case KIND_EXCEPTION:
-                // buf_exception_t *buf_item = reinterpret_cast<buf_exception_t*>(item);
+                buf_exc = reinterpret_cast<buf_exception_t*>(item);
+                std::cout << "0x" << std::hex << buf_exc->pc << " EXCEPTION 0x" << buf_exc->fault_address
+                    << std::dec << " [" << buf_exc->code << "]" << std::endl;
                 break;
             case KIND_MODULE:
-                // buf_module_t *buf_mod = reinterpret_cast<buf_module_t*>(item);
-                // const char* copyupto = std::find(buf_mod->name, buf_mod->name + sizeof(buf_mod->name), 0);
-                // std::string name(buf_mod->name, copyupto - buf_mod->name);
+                buf_mod = reinterpret_cast<buf_module_t*>(item);
+                {
+                    const char* copyupto = std::find(buf_mod->name, buf_mod->name + sizeof(buf_mod->name), 0);
+                    std::string name(buf_mod->name, copyupto - buf_mod->name);
+                    std::cout << "MODULE " << name << std::endl;
+                }
                 break;
             case KIND_SYMBOL:
                 DoKindSymbol(thread_info, *(buf_symbol_t*)item);
@@ -178,7 +196,6 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
                 break;
             case KIND_LIB_RET:
                 DoKindLibRet(thread_info, *(buf_lib_ret_t*)item);
-
                 if (thread_info.pending_state == 2) {
                     thread_info.pending_state = 1;
                     thread_info.last_kind = kind;
@@ -206,8 +223,6 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
             default:
                 throw std::runtime_error("unknown kind");
         } //
-
-        //std::cout << std::string((char*)&kind, 4) << std::endl;
 
         // Last Kind
         if (kind != KIND_ARGS && kind != KIND_STRING) {
@@ -632,6 +647,46 @@ LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync)
     }
 
     resume_cv_.notify_all();
+}
+ 
+void
+LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw)
+{
+    app_pc bb = thread_info.within_bb;
+    mem_ref_t mem_loop = thread_info.pending_loop;
+    bool looping = mem_loop.kind == KIND_LOOP;
+    if (thread_info.pending_loop.kind) {
+        thread_info.pending_loop.kind = KIND_NONE;
+        thread_info.pending_loop.pc = 0;
+        if (looping && mem_loop.pc != mem_rw.pc)
+            throw std::runtime_error("Mismatch loop with r/w pc");
+    }
+
+    if (thread_info.within_bb == 0) {
+        // std::cout << "pending: " << thread_info.pending_state << " bb: 0x" << std::hex << thread_info.pending_bb.pc << std::endl;
+        if (thread_info.pending_state == 2 && thread_info.pending_bb.kind == KIND_BB)
+            bb = thread_info.pending_bb.pc;
+        else
+            throw std::runtime_error("Whose bb access memory?");
+    }
+
+    // TODO: Callback here!
+    if (!looping) return; // DBG
+
+    std::cout << std::dec << thread_info.id << "] 0x" << std::hex << bb << " | 0x" << mem_rw.pc;
+    if (mem_rw.kind == KIND_WRITE) std::cout << " WRITE ";
+    if (mem_rw.kind == KIND_READ) std::cout << " READ ";
+    
+    std::cout << "0x" << mem_rw.addr 
+        << " [" << std::dec << mem_rw.size << "]";
+    
+    if (looping) {
+        std::cout << " x " << std::dec << mem_loop.size;
+        mem_loop.kind = KIND_NONE;
+        mem_loop.pc = 0;
+    }
+
+    std::cout << std::endl;
 }
 
 void
@@ -1120,6 +1175,8 @@ thread_info_c::SaveState(std::ostream &out)
     if (pending_state) {
         write_data(out, (char*)&pending_bb, 16);
     }
+    
+    write_data(out, (char*)&pending_loop, 16);
 
     last_bb.SaveState(out);
 }
@@ -1172,6 +1229,8 @@ thread_info_c::RestoreState(std::istream &in)
     if (pending_state) {
         read_data(in, (char*)&pending_bb, 16);
     }
+    
+    read_data(in, (char*)&pending_loop, 16);
 
     last_bb.RestoreState(in);
 }

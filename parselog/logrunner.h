@@ -90,6 +90,7 @@ protected:
     void DoKindString(thread_info_c &thread_info, buf_string_t &buf_str);
     void DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
+    void DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw);
 
     virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
     virtual void OnBB(uint thread_id, df_stackitem_c &last_bb);

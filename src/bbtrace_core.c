@@ -19,7 +19,7 @@
 
 #pragma intrinsic(__rdtsc)
 
-#define WITH_MEMTRACE 0
+#define WITH_MEMTRACE 1
 #define WITH_BBTRACE 1
 #define WITH_APPCALL 0
 #define WITH_LIBCALL 1
@@ -51,7 +51,13 @@ typedef struct {
     /* buf_end holds the negative value of real address of buffer end. */
     ptr_int_t buf_end;
     file_t dump_f;
+    uint loop_xcx;
 } per_thread_t;
+
+typedef struct {
+    instr_t *first_instr;
+    app_pc loop_stop_pc;
+} user_data_t;
 
 static void dump_data(per_thread_t *thd_data);
 
@@ -366,6 +372,8 @@ event_thread_init(void *drcontext)
     thd_data->buf_end  = -(ptr_int_t)(thd_data->buf_base + MEM_BUF_SIZE);
 
     thd_data->dump_f = dr_open_file(path, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+    thd_data->loop_xcx = 0;
+
     dr_fprintf(info_file, "Open dump file: %s\n", path);
     dr_printf("Open dump file: %s\n", path);
 }
@@ -689,7 +697,7 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where,
 }
 
 static void
-instrument_bb(void *drcontext, instrlist_t *ilist, instr_t *where, void *user_data)
+instrument_bb(void *drcontext, instrlist_t *ilist, instr_t *where, user_data_t *ud)
 {
     instr_t *instr, *call, *restore;
     opnd_t opnd1, opnd2;
@@ -697,7 +705,7 @@ instrument_bb(void *drcontext, instrlist_t *ilist, instr_t *where, void *user_da
     reg_t reg2 = DR_REG_XCX, reg1 = DR_REG_XBX;
     app_pc code_cache;
 
-    if (where != (instr_t*)user_data/* first_instr */) return;
+    if (where != ud->first_instr) return;
 
     instr_t* last_instr = instrlist_last_app(ilist);
     app_pc last_pc = instr_get_app_pc(last_instr);
@@ -851,10 +859,6 @@ instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
     app_pc pc;
     reg_t reg2 = DR_REG_XCX, reg1 = DR_REG_XBX;
     app_pc code_cache;
-    uint opc;
-
-    opc = instr_get_opcode(where);
-    if (!opc_is_stringop_loop(opc)) return;
 
     code_cache = codecache_get();
 
@@ -866,7 +870,7 @@ instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
     dr_save_reg(drcontext, ilist, where, reg1, SPILL_SLOT_2);
     dr_save_reg(drcontext, ilist, where, reg2, SPILL_SLOT_3);
 
-    /* Save ecx register to reg1 */
+    /* Save ecx register to ebx */
     opnd1 = opnd_create_reg(reg1);
     opnd2 = opnd_create_reg(reg2);
     instr = XINST_CREATE_move(drcontext, opnd1, opnd2);
@@ -975,23 +979,52 @@ instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
     // instrlist_disassemble(drcontext, tag, bb, STDERR);
 }
 
+static void
+instrument_stringop_loop_stop(void *drcontext, instrlist_t *ilist, instr_t *where)
+{
+}
+
 static dr_emit_flags_t
 event_bb_app2app(void *drcontext, void *tag, instrlist_t *bb,
-                 bool for_trace, bool translating)
+                 bool for_trace, bool translating, OUT void **user_data)
 {
+    user_data_t *ud = (user_data_t *)dr_thread_alloc(drcontext, sizeof(user_data_t));
+
+    instr_t *first_instr = instrlist_first(bb);
+    app_pc pc = instr_get_app_pc(first_instr);
+    module_data_t* mod = dr_lookup_module(pc);
+
+    ud->first_instr = NULL;
+    if (is_from_exe(pc, true) || is_dynamic_code(pc)) {
+        ud->first_instr = first_instr;
+    }
+    ud->loop_stop_pc = (app_pc)0;
+
+    *user_data = (void *)ud;
 #if 0
     if (!drutil_expand_rep_string(drcontext, bb)) {
         DR_ASSERT(false);
         /* in release build, carry on: we'll just miss per-iter refs */
     }
 #endif
+
+    return DR_EMIT_DEFAULT;
+}
+
+static dr_emit_flags_t
+event_bb_instru2instru(void *drcontext, void *tag, instrlist_t *bb, bool for_trace,
+                       bool translating, void *user_data)
+{
+    dr_thread_free(drcontext, user_data, sizeof(user_data_t));
     return DR_EMIT_DEFAULT;
 }
 
 static dr_emit_flags_t
 event_bb_analysis(void *drcontext,
-    void *tag, instrlist_t *bb, bool for_trace, bool translating, OUT void **user_data)
+    void *tag, instrlist_t *bb, bool for_trace, bool translating, void *user_data)
 {
+    user_data_t *ud = (user_data_t *)user_data;
+#if 0
     instr_t *first_instr = instrlist_first(bb);
     app_pc pc = instr_get_app_pc(first_instr);
     module_data_t* mod = dr_lookup_module(pc);
@@ -1003,7 +1036,7 @@ event_bb_analysis(void *drcontext,
     } else if (is_dynamic_code(pc)) {
         *user_data = first_instr;
     }
-
+#endif
     return DR_EMIT_DEFAULT;
 }
 
@@ -1011,13 +1044,26 @@ static dr_emit_flags_t
 event_bb_insert(void *drcontext, void *tag, instrlist_t *bb, instr_t *instr,
                       bool for_trace, bool translating, void *user_data)
 {
-    if (user_data) {
+    user_data_t *ud = (user_data_t *)user_data;
+
+    if (ud->first_instr) {
+        uint opc = instr_get_opcode(instr);
+        app_pc pc = instr_get_app_pc(instr);
+
 #if WITH_BBTRACE
-        instrument_bb(drcontext, bb, instr, user_data);
+        instrument_bb(drcontext, bb, instr, ud);
 #endif
 
 #if WITH_MEMTRACE
-        instrument_stringop_loop(drcontext, bb, instr);
+        if (ud->loop_stop_pc == pc) {
+            // instrument_stringop_loop_stop(drcontext, bb, instr);
+            ud->loop_stop_pc = (app_pc)0;
+        }
+        if (opc_is_stringop_loop(opc)) {
+            instr_t *next = instr_get_next_app(instr);
+            ud->loop_stop_pc = instr_get_app_pc(next);
+            instrument_stringop_loop(drcontext, bb, instr);
+        }
 
         opnd_t ref;
         int i;
@@ -1182,8 +1228,8 @@ bbtrace_init(client_id_t id)
 
     drmgr_register_thread_init_event(event_thread_init);
     drmgr_register_thread_exit_event(event_thread_exit);
-    drmgr_register_bb_app2app_event(event_bb_app2app, NULL);
-    drmgr_register_bb_instrumentation_event(event_bb_analysis, event_bb_insert, NULL);
+    drmgr_register_bb_instrumentation_ex_event(event_bb_app2app,
+        event_bb_analysis, event_bb_insert, event_bb_instru2instru, NULL);
     drmgr_register_module_load_event(event_module_load);
     drmgr_register_module_unload_event(event_module_unload);
     drmgr_register_exception_event(event_exception);
@@ -1199,8 +1245,9 @@ bbtrace_exit(void)
     drmgr_unregister_exception_event(event_exception);
     drmgr_unregister_module_unload_event(event_module_unload);
     drmgr_unregister_module_load_event(event_module_load);
-    drmgr_unregister_bb_insertion_event(event_bb_insert);
-    drmgr_unregister_bb_app2app_event(event_bb_app2app);
+    drmgr_unregister_bb_instrumentation_ex_event(
+                event_bb_app2app, event_bb_analysis, event_bb_insert,
+                event_bb_instru2instru);
     drmgr_unregister_thread_exit_event(event_thread_exit);
     drmgr_unregister_thread_init_event(event_thread_init);
 
