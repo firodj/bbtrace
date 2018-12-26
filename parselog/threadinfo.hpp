@@ -54,7 +54,6 @@ public:
     df_stackitem_c last_bb;
     df_apicall_c *apicall_now;
     mem_ref_t pending_bb;
-    mem_ref_t pending_loop;
     uint pending_state;
     uint hevent_wait;
     uint hevent_seq;

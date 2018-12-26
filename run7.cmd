@@ -30,8 +30,8 @@ For %%A in ("%filename%") do (
     Set Folder=%%~dpA
     Set Name=%%~nxA
 )
-
-SET ARGS=-c %LOCAL%\bin\RelWithDebInfo\%1.dll -- %Name% %4 %5 %6 %7 %8 %9
+SET Options=-memtrace
+SET ARGS=-c %LOCAL%\bin\RelWithDebInfo\%1.dll %Options% -- %Name% %4 %5 %6 %7 %8 %9
 
 :run
 

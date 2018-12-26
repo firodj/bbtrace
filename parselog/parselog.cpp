@@ -121,6 +121,7 @@ main(int argc, PCHAR* argv)
         } else
         if (opt_name == "j") {
             opt_use_multithread = true;
+            std::cout << "enable Multithread." << std::endl;
         } else {
             std::cout << "Unknown option: '" << opt_name << "'" << std::endl;
             return 1;

@@ -40,7 +40,7 @@ if (MSVC)
     # drrun.exe -c test_bbtrace.dll -- test_app.exe > ..\tests\test_bbtrace.expect 2>&1
   endif()
 
-  add_library(bbtrace SHARED src/bbtrace.c)
+  add_library(bbtrace SHARED src/bbtrace.cpp)
   target_link_libraries(bbtrace bbtrace_core)
 
   configure_DynamoRIO_client(bbtrace)

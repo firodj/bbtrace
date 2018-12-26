@@ -19,7 +19,7 @@
 
 #pragma intrinsic(__rdtsc)
 
-#define WITH_MEMTRACE 1
+static bool enable_memtrace = false;
 #define WITH_BBTRACE 1
 #define WITH_APPCALL 0
 #define WITH_LIBCALL 1
@@ -39,9 +39,11 @@ static void event_exit(void);
 static bool event_exception(void *drcontext, dr_exception_t *excpt);
 static void event_thread_init(void *drcontext);
 static void event_thread_exit(void *drcontext);
-static void memtrace(void *drcontext);
 static bool is_from_exe(app_pc pc, bool lookup);
 static bool is_dynamic_code(app_pc pc);
+static void dump_data(void *drcontext);
+static void dump_thread_mcontext(void *drcontext);
+
 static app_pc g_funCreateThread = 0;
 
 /* thread private log file and counter */
@@ -52,14 +54,14 @@ typedef struct {
     ptr_int_t buf_end;
     file_t dump_f;
     uint loop_xcx;
+    app_pc loop_pc;
+    bool dump_mcontext;
 } per_thread_t;
 
 typedef struct {
     instr_t *first_instr;
     app_pc loop_stop_pc;
 } user_data_t;
-
-static void dump_data(per_thread_t *thd_data);
 
 // Hack
 static void
@@ -141,7 +143,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     // trace lib call
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_lib_call_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_lib_call_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_lib_call_t);
 
@@ -156,7 +158,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     if (sym_info->winapi_info) {
         if (buf_str.kind == KIND_STRING) {
             if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_string_t)) >= -thd_data->buf_end)
-                memtrace(drcontext);
+                dump_data(drcontext);
             *(buf_string_t*)thd_data->buf_ptr = buf_str;
             thd_data->buf_ptr += sizeof(buf_string_t);
         }
@@ -205,7 +207,7 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
 
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_lib_ret_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_lib_ret_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_lib_ret_t);
 
@@ -280,7 +282,7 @@ iterate_exports(void * drcontext, const module_data_t *mod, bool add)
     DR_ASSERT(2 * sizeof(mem_ref_t) == sizeof(buf_module_t));
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_module_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_module_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_module_t);
 
@@ -343,9 +345,39 @@ WndProc_entry(void *wrapcxt, INOUT void **user_data)
     for (int a=0; a<3; a++) buf_item.params[a] = (uint)drwrap_get_arg(wrapcxt, a+1);
     DR_ASSERT(sizeof(buf_event_t) % sizeof(mem_ref_t) == 0);
 
-    if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end) memtrace(drcontext);
+    if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end) dump_data(drcontext);
     *(buf_event_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_event_t);
+}
+
+static void
+dump_thread_mcontext(void *drcontext)
+{
+    dr_mcontext_t mcontext = {
+        sizeof(mcontext),
+        DR_MC_ALL,
+    };
+    thread_id_t thread_id = dr_get_thread_id(drcontext);
+    per_thread_t *thd_data = drmgr_get_tls_field(drcontext, tls_index);
+
+    if (! dr_get_mcontext(drcontext, &mcontext)) return;
+
+    buf_event_t buf_item = {0};
+    buf_item.kind = KIND_THREAD;
+    buf_item.params[0] = thread_id;
+    buf_item.params[1] = mcontext.xsp;
+    buf_item.params[2] = mcontext.xflags;
+    DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_event_t));
+
+    if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end)
+        dump_data(drcontext);
+    *(buf_event_t*)thd_data->buf_ptr = buf_item;
+    thd_data->buf_ptr += sizeof(buf_event_t);
+
+    thd_data->dump_mcontext = true;
+
+    dr_fprintf(info_file, "%d] SP:0x%x, FLAGS:0x%x\n", thread_id, mcontext.xsp, mcontext.xflags);
+    dr_printf("%d] SP:0x%x, FLAGS:0x%x\n", thread_id, mcontext.xsp, mcontext.xflags);
 }
 
 static void
@@ -373,9 +405,10 @@ event_thread_init(void *drcontext)
 
     thd_data->dump_f = dr_open_file(path, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
     thd_data->loop_xcx = 0;
+    thd_data->dump_mcontext = false;
 
-    dr_fprintf(info_file, "Open dump file: %s\n", path);
-    dr_printf("Open dump file: %s\n", path);
+    dr_fprintf(info_file, "%d] Open dump file: %s\n", thread_id, path);
+    dr_printf("%d] Open dump file: %s\n", thread_id, path);
 }
 
 static void
@@ -383,7 +416,7 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *thd_data;
 
-    memtrace(drcontext);
+    dump_data(drcontext);
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     thd_data->dump_f;
 
@@ -407,7 +440,7 @@ event_exception(void *drcontext, dr_exception_t *excpt)
 
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_exception_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_exception_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_exception_t);
 
@@ -416,6 +449,7 @@ event_exception(void *drcontext, dr_exception_t *excpt)
     return true;
 }
 
+#if 0
 static void
 at_call(app_pc instr_addr, app_pc target_addr)
 {
@@ -434,10 +468,11 @@ at_call(app_pc instr_addr, app_pc target_addr)
 
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_app_call_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_app_call_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_app_call_t);
 }
+#endif
 
 static void
 at_call_ind(app_pc instr_addr, app_pc target_addr)
@@ -457,11 +492,12 @@ at_call_ind(app_pc instr_addr, app_pc target_addr)
 
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_app_call_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_app_call_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_app_call_t);
 }
 
+#if 0
 static void
 at_return(app_pc instr_addr, app_pc target_addr)
 {
@@ -477,10 +513,11 @@ at_return(app_pc instr_addr, app_pc target_addr)
 
     thd_data = drmgr_get_tls_field(drcontext, tls_index);
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_app_ret_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_app_ret_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_app_ret_t);
 }
+#endif
 
 static bool
 is_dynamic_code(app_pc pc) {
@@ -516,25 +553,6 @@ is_from_exe(app_pc pc, bool lookup)
     }
 
     return from_exe;
-}
-
-static void
-memtrace(void *drcontext)
-{
-    per_thread_t *thd_data;
-    thd_data  = drmgr_get_tls_field(drcontext, tls_index);
-    thread_id_t thread_id = dr_get_thread_id(drcontext);
-
-    dump_data(thd_data);
-/*
-    buf_event_t buf_item = {0};
-    buf_item.kind = KIND_THREAD;
-    buf_item.params[0] = thread_id;
-    DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_event_t));
-
-    *(buf_event_t*)thd_data->buf_ptr = buf_item;
-    thd_data->buf_ptr += sizeof(buf_event_t);
-    */
 }
 
 static void
@@ -854,21 +872,52 @@ opc_is_stringop_loop(uint opc)
 static void
 instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
 {
-    instr_t *instr, *call, *restore;
+    instr_t *instr;
     opnd_t opnd1, opnd2;
     app_pc pc;
     reg_t reg2 = DR_REG_XCX, reg1 = DR_REG_XBX;
+    pc = instr_get_app_pc(where);
+
+    dr_save_reg(drcontext, ilist, where, reg1, SPILL_SLOT_2);
+
+    /* read *data ptr into reg1 xbx */
+    drmgr_insert_read_tls_field(drcontext, tls_index, ilist, where, reg1);
+
+    /* Store reg2 xcx into data->loop_xcx into reg2 */
+    opnd1 = OPND_CREATE_MEMPTR(reg1, offsetof(per_thread_t, loop_xcx));
+    opnd2 = opnd_create_reg(reg2);
+    instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
+    instrlist_meta_preinsert(ilist, where, instr);
+
+    /* For 64-bit, we can't use a 64-bit immediate so we split pc into two halves.
+     * We could alternatively load it into reg1 and then store reg1.
+     * We use a convenience routine that does the two-step store for us.
+     */
+    opnd1 = OPND_CREATE_MEMPTR(reg1, offsetof(per_thread_t, loop_pc));
+    instrlist_insert_mov_immed_ptrsz(drcontext, (ptr_int_t) pc, opnd1,
+                                     ilist, where, NULL, NULL);
+
+    /* Restore scratch registers */
+    dr_restore_reg(drcontext, ilist, where, reg1, SPILL_SLOT_2);
+
+    // instrlist_disassemble(drcontext, tag, bb, STDERR);
+}
+
+static void
+instrument_stringop_loop_stop(void *drcontext, instrlist_t *ilist, instr_t *where)
+{
+    instr_t *instr, *call, *restore;
+    opnd_t opnd1, opnd2;
+    reg_t reg2 = DR_REG_XCX, reg1 = DR_REG_XBX, reg3 = DR_REG_XDX;
     app_pc code_cache;
 
     code_cache = codecache_get();
-
-    pc = instr_get_app_pc(where);
-
     call  = INSTR_CREATE_label(drcontext);
     restore = INSTR_CREATE_label(drcontext);
 
     dr_save_reg(drcontext, ilist, where, reg1, SPILL_SLOT_2);
     dr_save_reg(drcontext, ilist, where, reg2, SPILL_SLOT_3);
+    dr_save_reg(drcontext, ilist, where, reg3, SPILL_SLOT_4);
 
     /* Save ecx register to ebx */
     opnd1 = opnd_create_reg(reg1);
@@ -876,7 +925,14 @@ instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
     instr = XINST_CREATE_move(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(ilist, where, instr);
 
+    /* Load per_thread into reg2 ecx */
     drmgr_insert_read_tls_field(drcontext, tls_index, ilist, where, reg2);
+
+    /* Save reg2 ecx register into reg3 edx */
+    opnd1 = opnd_create_reg(reg3);
+    opnd2 = opnd_create_reg(reg2);
+    instr = XINST_CREATE_move(drcontext, opnd1, opnd2);
+    instrlist_meta_preinsert(ilist, where, instr);
 
     /* Load data->buf_ptr into reg2 */
     opnd1 = opnd_create_reg(reg2);
@@ -890,25 +946,35 @@ instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
     instr = INSTR_CREATE_mov_imm(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(ilist, where, instr);
 
-    /* Store address in memory ref */
-    opnd1 = OPND_CREATE_MEMPTR(reg2, offsetof(mem_ref_t, addr));
-    opnd2 = OPND_CREATE_INT32(0);
-    instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
-    instrlist_meta_preinsert(ilist, where, instr);
-
-    /* Store size in memory ref */
+    /* Store counter reg 1 xbx in memory ref's size */
     opnd1 = OPND_CREATE_MEMPTR(reg2, offsetof(mem_ref_t, size));
     opnd2 = opnd_create_reg(reg1);
     instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(ilist, where, instr);
 
-    /* For 64-bit, we can't use a 64-bit immediate so we split pc into two halves.
-     * We could alternatively load it into reg1 and then store reg1.
-     * We use a convenience routine that does the two-step store for us.
-     */
+    /* Load loop_xcx into reg 1 xbx */
+    opnd1 = opnd_create_reg(reg1);
+    opnd2 = OPND_CREATE_MEMPTR(reg3, offsetof(per_thread_t, loop_xcx));
+    instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
+    instrlist_meta_preinsert(ilist, where, instr);
+
+    /* Store latest xcx value into memory ref's address */
+    opnd1 = OPND_CREATE_MEMPTR(reg2, offsetof(mem_ref_t, addr));
+    opnd2 = opnd_create_reg(reg1);
+    instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
+    instrlist_meta_preinsert(ilist, where, instr);
+
+    /* Load loop_pc into reg 1 xbx */
+    opnd1 = opnd_create_reg(reg1);
+    opnd2 = OPND_CREATE_MEMPTR(reg3, offsetof(per_thread_t, loop_pc));
+    instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
+    instrlist_meta_preinsert(ilist, where, instr);
+
+    /* Store loop pc into memory ref's pc */
     opnd1 = OPND_CREATE_MEMPTR(reg2, offsetof(mem_ref_t, pc));
-    instrlist_insert_mov_immed_ptrsz(drcontext, (ptr_int_t) pc, opnd1,
-                                     ilist, where, NULL, NULL);
+    opnd2 = opnd_create_reg(reg1);
+    instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
+    instrlist_meta_preinsert(ilist, where, instr);
 
     /* Increment reg value by pointer size using lea instr */
     opnd1 = opnd_create_reg(reg2);
@@ -920,6 +986,7 @@ instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
 
     /* Update the data->buf_ptr */
     drmgr_insert_read_tls_field(drcontext, tls_index, ilist, where, reg1);
+
     opnd1 = OPND_CREATE_MEMPTR(reg1, offsetof(per_thread_t, buf_ptr));
     opnd2 = opnd_create_reg(reg2);
     instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
@@ -973,21 +1040,18 @@ instrument_stringop_loop(void *drcontext, instrlist_t *ilist, instr_t *where)
     /* Restore scratch registers */
     instrlist_meta_preinsert(ilist, where, restore);
 
+    dr_restore_reg(drcontext, ilist, where, reg3, SPILL_SLOT_4);
     dr_restore_reg(drcontext, ilist, where, reg2, SPILL_SLOT_3);
     dr_restore_reg(drcontext, ilist, where, reg1, SPILL_SLOT_2);
 
     // instrlist_disassemble(drcontext, tag, bb, STDERR);
 }
 
-static void
-instrument_stringop_loop_stop(void *drcontext, instrlist_t *ilist, instr_t *where)
-{
-}
-
 static dr_emit_flags_t
 event_bb_app2app(void *drcontext, void *tag, instrlist_t *bb,
                  bool for_trace, bool translating, OUT void **user_data)
 {
+    per_thread_t *thd_data = drmgr_get_tls_field(drcontext, tls_index);
     user_data_t *ud = (user_data_t *)dr_thread_alloc(drcontext, sizeof(user_data_t));
 
     instr_t *first_instr = instrlist_first(bb);
@@ -1001,6 +1065,7 @@ event_bb_app2app(void *drcontext, void *tag, instrlist_t *bb,
     ud->loop_stop_pc = (app_pc)0;
 
     *user_data = (void *)ud;
+
 #if 0
     if (!drutil_expand_rep_string(drcontext, bb)) {
         DR_ASSERT(false);
@@ -1023,7 +1088,12 @@ static dr_emit_flags_t
 event_bb_analysis(void *drcontext,
     void *tag, instrlist_t *bb, bool for_trace, bool translating, void *user_data)
 {
-    user_data_t *ud = (user_data_t *)user_data;
+    per_thread_t *thd_data = drmgr_get_tls_field(drcontext, tls_index);
+    // user_data_t *ud = (user_data_t *)user_data;
+
+    if (!for_trace && !translating && !thd_data->dump_mcontext)
+        dump_thread_mcontext(drcontext);
+
 #if 0
     instr_t *first_instr = instrlist_first(bb);
     app_pc pc = instr_get_app_pc(first_instr);
@@ -1054,37 +1124,37 @@ event_bb_insert(void *drcontext, void *tag, instrlist_t *bb, instr_t *instr,
         instrument_bb(drcontext, bb, instr, ud);
 #endif
 
-#if WITH_MEMTRACE
-        if (ud->loop_stop_pc == pc) {
-            // instrument_stringop_loop_stop(drcontext, bb, instr);
-            ud->loop_stop_pc = (app_pc)0;
-        }
-        if (opc_is_stringop_loop(opc)) {
-            instr_t *next = instr_get_next_app(instr);
-            ud->loop_stop_pc = instr_get_app_pc(next);
-            instrument_stringop_loop(drcontext, bb, instr);
-        }
+        if (enable_memtrace) {
+            if (ud->loop_stop_pc == pc) {
+                instrument_stringop_loop_stop(drcontext, bb, instr);
+                ud->loop_stop_pc = (app_pc)0;
+            }
+            if (opc_is_stringop_loop(opc)) {
+                instr_t *next = instr_get_next_app(instr);
+                ud->loop_stop_pc = instr_get_app_pc(next);
+                instrument_stringop_loop(drcontext, bb, instr);
+            }
 
-        opnd_t ref;
-        int i;
+            opnd_t ref;
+            int i;
 
-        if (instr_reads_memory(instr)) {
-            for (i = 0; i < instr_num_srcs(instr); i++) {
-                ref = instr_get_src(instr, i);
-                if (opnd_is_memory_reference(ref)) {
-                    instrument_mem(drcontext, bb, instr, ref, false);
+            if (instr_reads_memory(instr)) {
+                for (i = 0; i < instr_num_srcs(instr); i++) {
+                    ref = instr_get_src(instr, i);
+                    if (opnd_is_memory_reference(ref)) {
+                        instrument_mem(drcontext, bb, instr, ref, false);
+                    }
+                }
+            }
+            if (instr_writes_memory(instr)) {
+                for (i = 0; i < instr_num_dsts(instr); i++) {
+                    ref = instr_get_dst(instr, i);
+                    if (opnd_is_memory_reference(ref)) {
+                        instrument_mem(drcontext, bb, instr, ref, true);
+                    }
                 }
             }
         }
-        if (instr_writes_memory(instr)) {
-            for (i = 0; i < instr_num_dsts(instr); i++) {
-                ref = instr_get_dst(instr, i);
-                if (opnd_is_memory_reference(ref)) {
-                    instrument_mem(drcontext, bb, instr, ref, true);
-                }
-            }
-        }
-#endif
 
 #if WITH_APPCALL
         /* instrument calls and returns -- ignore far calls/rets */
@@ -1122,12 +1192,13 @@ static void
 clean_call(void)
 {
     void *drcontext = dr_get_current_drcontext();
-    memtrace(drcontext);
+    dump_data(drcontext);
 }
 
 void
-dump_data(per_thread_t *thd_data)
+dump_data(void *drcontext)
 {
+    per_thread_t *thd_data = drmgr_get_tls_field(drcontext, tls_index);
     size_t count = (size_t)(thd_data->buf_ptr - thd_data->buf_base);
 
     if (thd_data->dump_f != INVALID_FILE) {
@@ -1147,7 +1218,7 @@ dump_symbol_data(buf_symbol_t *p_buf_item)
     DR_ASSERT(6 * sizeof(mem_ref_t) == sizeof(buf_symbol_t));
 
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_symbol_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_symbol_t*)thd_data->buf_ptr = *p_buf_item;
     thd_data->buf_ptr += sizeof(buf_symbol_t);
 }
@@ -1162,7 +1233,7 @@ dump_event_data(buf_event_t *p_buf_item)
     DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_event_t));
 
     if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end)
-        memtrace(drcontext);
+        dump_data(drcontext);
     *(buf_event_t*)thd_data->buf_ptr = *p_buf_item;
     thd_data->buf_ptr += sizeof(buf_event_t);
 }
@@ -1193,11 +1264,13 @@ get_info_file() {
 }
 
 void
-bbtrace_init(client_id_t id)
+bbtrace_init(client_id_t id, bool is_enable_memtrace)
 {
     char path[MAXIMUM_PATH];
     dr_time_t start_time;
     dr_get_time(&start_time);
+
+    enable_memtrace = is_enable_memtrace;
 
     const char *app_name = dr_get_application_name();
 

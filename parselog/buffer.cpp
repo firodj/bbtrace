@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 
 #define WITHOUT_DR
 #include "datatypes.h"
@@ -86,7 +87,16 @@ buffer_c::buf_size(uint kind) {
     case KIND_WNDPROC:
     case KIND_SYNC:
     case KIND_ARGS:
+    case KIND_THREAD:
         return sizeof(buf_event_t);
+    default: {
+        std::ostringstream oss;
+        oss << "Unknown buffer_c::buf_size kind 0x" << std::hex << kind;
+        if (kind) {
+            oss << " KIND: " << std::string((char*)&kind, 4) << std::endl;
+        }
+        throw std::runtime_error(oss.str());
+        }
     }
     return 0;
 }
