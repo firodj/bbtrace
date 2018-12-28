@@ -94,7 +94,8 @@ protected:
     void DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write);
     void DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop);
     virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
-    virtual void OnBB(uint thread_id, df_stackitem_c &last_bb, std::vector<df_memaccess_c> &memaccesses);
+    virtual void OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses);
+    virtual void OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api);
     virtual void OnThread(uint thread_id, uint handle_id, uint sp);
 
 public:

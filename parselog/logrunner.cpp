@@ -102,7 +102,7 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
         // Check Lib Ret first
         if (thread_info.apicall_now) {
             kind = thread_info.logparser.peek();
-            if (kind != KIND_ARGS && kind != KIND_STRING && thread_info.last_kind == KIND_LIB_RET) {
+            if (thread_info.last_kind == KIND_LIB_RET && kind != KIND_ARGS && kind != KIND_STRING) {
                 ApiCallRet(thread_info);
                 break;
             }
@@ -125,6 +125,11 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
             // Consume kind
             item = thread_info.logparser.fetch();
             thread_info.filepos = thread_info.logparser.tell();
+#if 0
+            kind = *(uint*)item;
+            std::cout << std::dec << thread_info.id << "] " << std::dec << thread_info.now_ts
+                << " KIND: " << std::string((char*)&kind, 4) << std::endl;
+#endif
         }
 
         if (!item) {
@@ -135,11 +140,6 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
         mem_ref_t *buf_bb;
         buf_exception_t *buf_exc;
         buf_module_t *buf_mod;
-
-#if 0
-        std::cout << std::dec << thread_info.id << "] " << std::dec << thread_info.now_ts
-            << " KIND: " << std::string((char*)&kind, 4) << std::endl;
-#endif
 
         switch (kind) {
             case KIND_THREAD:
@@ -182,8 +182,6 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
             }
                 break;
             case KIND_LOOP:
-                if (thread_info.last_kind != KIND_WRITE && thread_info.last_kind != KIND_READ) 
-                    throw std::runtime_error("Loop for who?");
                 buf_bb = reinterpret_cast<mem_ref_t*>(item);
                 DoMemLoop(thread_info, *buf_bb);
                 break;
@@ -252,7 +250,7 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
         } //
 
         // Last Kind
-        if (kind != KIND_ARGS && kind != KIND_STRING) {
+        if (kind != KIND_ARGS && kind != KIND_STRING && kind != KIND_READ && kind != KIND_WRITE) {
             thread_info.last_kind = kind;
         }
     }
@@ -396,12 +394,17 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     }
 #endif
     // fixes stacks for bb with called (usually) to untracked api
+    df_stackitem_c bb_untracked_api;
+
     if (thread_info.last_bb.link == LINK_CALL) {
         bb_is_sub = true;
         size_t i = thread_info.stacks.size();
         if (i) {
-            df_stackitem_c& item = thread_info.stacks[i-1];
-            if (item.kind == KIND_BB && item.next == thread_info.within_bb) {
+            df_stackitem_c& last_item = thread_info.stacks[i-1];
+            if (last_item.kind == KIND_BB && last_item.next == thread_info.within_bb) {
+                if (thread_info.last_kind == KIND_BB)
+                    bb_untracked_api = last_item;
+
                 thread_info.stacks.erase(
                     thread_info.stacks.begin()+i-1,
                     thread_info.stacks.end());
@@ -448,6 +451,11 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
                 //throw std::runtime_error ("DIE!");
             }
         }
+    }
+
+    if (bb_untracked_api.pc) {
+        bb_untracked_api.ts = thread_info.now_ts++;
+        OnApiUntracked(thread_info.id, bb_untracked_api);
     }
 
     thread_info.last_bb.kind = KIND_BB;
@@ -714,7 +722,7 @@ void
 LogRunner::DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop)
 {
     if (thread_info.memaccesses.size() == 0)
-        throw std::runtime_error("missing mem access for loop");
+        throw std::runtime_error("loop for who? missing mem access for loop");
     
     df_memaccess_c &memaccess_cur = thread_info.memaccesses.back();
     if (memaccess_cur.pc != mem_loop.pc)
@@ -882,10 +890,6 @@ LogRunner::DoEndBB(thread_info_c &thread_info)
     }
     OnBB(thread_info.id, thread_info.last_bb, thread_info.memaccesses);
 
-    if (thread_info.last_bb.s_depth > 800) {
-        thread_info.Dump();
-        throw std::runtime_error("Ooopppss");
-    }
     thread_info.memaccesses.clear();
     thread_info.within_bb = 0;
 }
@@ -900,7 +904,7 @@ LogRunner::OnThread(uint thread_id, uint handle_id, uint sp)
 }
 
 void
-LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb, std::vector<df_memaccess_c> &memaccesses)
+LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses)
 {
     if (show_options_ & LR_SHOW_BB) {
         std::cout << std::dec << thread_id << "] ";
@@ -927,6 +931,18 @@ LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
     if (verbose) {
         std::cout << std::dec << thread_id << "] ";
         apicall_ret.Dump();
+    }
+}
+
+void
+LogRunner::OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api)
+{
+    bool verbose = show_options_ & LR_SHOW_LIBCALL;
+
+    if (verbose) {
+        std::cout << std::dec << thread_id << "] Untracked api by bb:0x" << std::hex << bb_untracked_api.pc
+            << " ts:" << std::dec << bb_untracked_api.ts
+            << std::endl;
     }
 }
 
@@ -1451,21 +1467,21 @@ df_apicall_c::Dump(int indent)
 {
     std::string _tab = std::string(indent, ' ');
 
-    std::cout << _tab << "call " << name << "@" << func << "( ";
+    std::cout << _tab << "call " << name << "@0x" << std::hex << func << "(";
     for (auto carg: callargs) {
-        std::cout << std::dec << carg << ", ";
+        std::cout << std::dec << carg << ",";
     }
     for (auto cstr: callstrings) {
-        std::cout << cstr << ", ";
+        std::cout << cstr << ",";
     }
-    std::cout << ") -> { ";
+    std::cout << ") -> result {";
     for (auto rarg: retargs) {
-        std::cout << std::dec << rarg << ", ";
+        std::cout << std::dec << rarg << ",";
     }
     for (auto rstr: retstrings) {
-        std::cout << rstr << ", ";
+        std::cout << rstr << ",";
     }
-    std::cout << "} => 0x" << std::hex << ret_addr;
+    std::cout << "} return: 0x" << std::hex << ret_addr;
     std::cout << " ts:" << std::dec << ts;
     std::cout << " s-depth:" << s_depth;
     std::cout << std::endl;

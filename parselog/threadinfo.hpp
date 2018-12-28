@@ -46,15 +46,24 @@ public:
     app_pc pc;
     uint addr;
     uint size;
-    bool is_write:1;
-    bool is_loop:1;
+    union {
+        uint flags;
+        struct {
+            bool is_write:1;
+            bool is_loop:1;
+        };
+    };
     uint loop_from;
     uint loop_to;
+    df_memaccess_c():
+        pc(0), addr(0), size(0), is_write(false), is_loop(false) {}
 
     void Dump(int indent = 0);
     void SaveState(std::ostream &out);
     void RestoreState(std::istream &in);
 };
+
+typedef std::vector<df_memaccess_c> vec_memaccess_t;
 
 class LogRunner;
 
@@ -83,7 +92,7 @@ public:
     uint64 now_ts;
     std::unique_ptr<std::thread> the_thread;
     LogRunner* the_runner;
-    std::vector<df_memaccess_c> memaccesses;
+    vec_memaccess_t memaccesses;
 
     thread_info_c():
         running(false),

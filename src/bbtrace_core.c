@@ -126,8 +126,10 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     }
 
     // WINAPI: save args and strings
+    uint nargs = 0;
     if (sym_info->winapi_info) {
-        for (uint a = 0; a < sym_info->winapi_info->nargs; a++) {
+        nargs = sym_info->winapi_info->nargs;
+        for (uint a = 0; a < nargs; a++) {
             p_data->args[a] = drwrap_get_arg(wrapcxt, a);
             // Capture only arg-0
             if (a == 0) {
@@ -148,7 +150,10 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     thd_data->buf_ptr += sizeof(buf_lib_call_t);
 
     // WINAPI: pre hook
+    bool have_hooks = false;
     if (sym_info->winapi_info) {
+        have_hooks = sym_info->winapi_info->pre_hook || sym_info->winapi_info->post_hook;
+
         if (sym_info->winapi_info->pre_hook) {
             sym_info->winapi_info->pre_hook(wrapcxt, (void*)p_data);
         }
@@ -161,6 +166,22 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
                 dump_data(drcontext);
             *(buf_string_t*)thd_data->buf_ptr = buf_str;
             thd_data->buf_ptr += sizeof(buf_string_t);
+        }
+
+        // NOTE: hooks usually already saved the args
+        if (! have_hooks) {
+            for (uint a = 1; a < nargs;) {
+                buf_event_t buf_args = {0};
+                buf_args.kind = KIND_ARGS;
+                for (uint b = 0; b < 3 && a < nargs; b++, a++) {
+                    buf_args.params[b] = (uint)p_data->args[a];
+                }
+
+                if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end)
+                    dump_data(drcontext);
+                *(buf_event_t*)thd_data->buf_ptr = buf_args;
+                thd_data->buf_ptr += sizeof(buf_event_t);
+            }
         }
     }
 }
@@ -1166,7 +1187,7 @@ event_bb_insert(void *drcontext, void *tag, instrlist_t *bb, instr_t *instr,
         }
         else
 #endif
-          // TODO: check only when tere is base/index regs
+          // TODO: check only when there is base/index regs
         if (instr_is_call_indirect(instr)) {
             dr_insert_mbr_instrumentation(drcontext, bb, instr, (app_pc)at_call_ind,
                                    SPILL_SLOT_1);

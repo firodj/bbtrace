@@ -2,6 +2,8 @@
 
 #include "dr_api.h"
 
+#define MAX_LIB_ARGS 10
+
 enum _shared_dll_t {
   NO_DLL,
   D3D9_DLL,
@@ -59,7 +61,7 @@ typedef struct _sym_info_item_t {
 typedef struct _wrap_lib_user_t {
     sym_info_item_t sym_info;
     bool verbose;
-    void *args[10];
+    void *args[MAX_LIB_ARGS];
     void *retval;
     // void (*pre_func_cb)(void *wrapcxt, OUT void **user_data);
     // void (*post_func_cb)(void *wrapcxt, void *user_data);
