@@ -12,7 +12,8 @@
 #include "threadinfo.hpp"
 
 #define LR_SHOW_BB 0x1
-#define LR_SHOW_LIBCALL 0x2
+#define LR_SHOW_MEM 0x2
+#define LR_SHOW_LIBCALL 0x4
 
 typedef std::map<uint, uint> map_uint_uint_t;
 typedef std::map<uint, uint64> map_uint_uint64_t;
@@ -90,10 +91,11 @@ protected:
     void DoKindString(thread_info_c &thread_info, buf_string_t &buf_str);
     void DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync);
     void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
-    void DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw);
-
+    void DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write);
+    void DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop);
     virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
-    virtual void OnBB(uint thread_id, df_stackitem_c &last_bb);
+    virtual void OnBB(uint thread_id, df_stackitem_c &last_bb, std::vector<df_memaccess_c> &memaccesses);
+    virtual void OnThread(uint thread_id, uint handle_id, uint sp);
 
 public:
     LogRunner(): show_options_(0) {}

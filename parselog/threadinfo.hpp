@@ -41,6 +41,21 @@ public:
     void RestoreState(std::istream &in);
 };
 
+class df_memaccess_c {
+public:
+    app_pc pc;
+    uint addr;
+    uint size;
+    bool is_write:1;
+    bool is_loop:1;
+    uint loop_from;
+    uint loop_to;
+
+    void Dump(int indent = 0);
+    void SaveState(std::ostream &out);
+    void RestoreState(std::istream &in);
+};
+
 class LogRunner;
 
 class thread_info_c {
@@ -68,6 +83,7 @@ public:
     uint64 now_ts;
     std::unique_ptr<std::thread> the_thread;
     LogRunner* the_runner;
+    std::vector<df_memaccess_c> memaccesses;
 
     thread_info_c():
         running(false),

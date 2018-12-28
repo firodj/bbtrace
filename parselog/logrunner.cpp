@@ -112,7 +112,7 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
         if (thread_info.within_bb) {
             kind = thread_info.logparser.peek();
             if (kind == KIND_BB || kind == KIND_LIB_CALL) {
-                DoEndBB(thread_info /* , bb mem read/write */);
+                DoEndBB(thread_info);
                 break;
             }
         }
@@ -142,13 +142,10 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
 #endif
 
         switch (kind) {
-            case KIND_THREAD: {
+            case KIND_THREAD:
+                {
                     buf_event_t *buf_evt = (buf_event_t*)item;
-                    std::cout << std::dec << thread_info.id << "] ";
-                    std::cout << "Thread ID:" << std::dec << buf_evt->params[0]
-                        << " SP:0x" << std::hex << buf_evt->params[1]
-                        << " Flags:0x" << buf_evt->params[2]
-                        << std::endl;
+                    OnThread(thread_info.id, buf_evt->params[0], buf_evt->params[1]);
                 }
                 break;
             case KIND_BB: {
@@ -187,20 +184,16 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
             case KIND_LOOP:
                 if (thread_info.last_kind != KIND_WRITE && thread_info.last_kind != KIND_READ) 
                     throw std::runtime_error("Loop for who?");
-#if 0
-                // AFTER Mem R/W
                 buf_bb = reinterpret_cast<mem_ref_t*>(item);
-                std::cout << thread_info.id << "] 0x" << std::hex << buf_bb->pc << " LOOP from:" << std::dec << buf_bb->addr
-                    << " to:" << buf_bb->size << std::endl;
-#endif
+                DoMemLoop(thread_info, *buf_bb);
                 break;
             case KIND_READ:
                 buf_bb = reinterpret_cast<mem_ref_t*>(item);
-                DoMemRW(thread_info, *(mem_ref_t*)item);
+                DoMemRW(thread_info, *buf_bb, false);
                 break;
             case KIND_WRITE:
                 buf_bb = reinterpret_cast<mem_ref_t*>(item);
-                DoMemRW(thread_info, *(mem_ref_t*)item);
+                DoMemRW(thread_info, *buf_bb, true);
                 break;
             case KIND_EXCEPTION:
                 buf_exc = reinterpret_cast<buf_exception_t*>(item);
@@ -684,7 +677,7 @@ LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync)
 }
  
 void
-LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw)
+LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write)
 {
     app_pc bb = thread_info.within_bb;
 
@@ -696,6 +689,15 @@ LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw)
             throw std::runtime_error("Whose bb access memory?");
     }
 
+    thread_info.memaccesses.push_back(df_memaccess_c());
+    df_memaccess_c &memaccess_cur = thread_info.memaccesses.back();
+
+    memaccess_cur.pc = mem_rw.pc;
+    memaccess_cur.addr = mem_rw.addr;
+    memaccess_cur.size = mem_rw.size;
+    memaccess_cur.is_write = is_write;
+    memaccess_cur.is_loop = false;
+    
 #if 0
     std::cout << std::dec << thread_info.id << "] 0x" << std::hex << bb << " | 0x" << mem_rw.pc;
     if (mem_rw.kind == KIND_WRITE) std::cout << " WRITE ";
@@ -705,6 +707,27 @@ LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw)
         << " [" << std::dec << mem_rw.size << "]";
     
     std::cout << std::endl;
+#endif
+}
+
+void
+LogRunner::DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop)
+{
+    if (thread_info.memaccesses.size() == 0)
+        throw std::runtime_error("missing mem access for loop");
+    
+    df_memaccess_c &memaccess_cur = thread_info.memaccesses.back();
+    if (memaccess_cur.pc != mem_loop.pc)
+        throw std::runtime_error("mismatch loop and mem access pc");
+
+    memaccess_cur.is_loop = true;
+    memaccess_cur.loop_from = mem_loop.addr;
+    memaccess_cur.loop_to = mem_loop.size;
+
+#if 0
+    // AFTER Mem R/W
+    std::cout << thread_info.id << "] 0x" << std::hex << mem_loop->pc << " LOOP from:" << std::dec << mem_loop->addr
+        << " to:" << mem_loop->size << std::endl;
 #endif
 }
 
@@ -805,23 +828,6 @@ LogRunner::ThreadWaitRunning(thread_info_c &thread_info)
 }
 
 void
-LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
-{
-    bool verbose = show_options_ & LR_SHOW_LIBCALL;
-    if (!verbose)
-    for (auto filter_addr : filter_apicall_addrs_) {
-        if (filter_addr == apicall_ret.func) {
-            verbose = true; break;
-        }
-    }
-    if (verbose) {
-        std::cout << std::dec << thread_id << "] ";
-        std::cout << std::dec << "s:" << std::dec << apicall_ret.s_depth << " ";
-        apicall_ret.Dump();
-    }
-}
-
-void
 LogRunner::PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data)
 {
     {
@@ -869,22 +875,58 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
 }
 
 void
-LogRunner::DoEndBB(thread_info_c &thread_info /* , bb mem read/write */)
+LogRunner::DoEndBB(thread_info_c &thread_info)
 {
     if (thread_info.within_bb != thread_info.last_bb.pc) {
         throw std::runtime_error("Mismatch last_bb with within_bb !");
     }
-    OnBB(thread_info.id, thread_info.last_bb);
+    OnBB(thread_info.id, thread_info.last_bb, thread_info.memaccesses);
+
+    if (thread_info.last_bb.s_depth > 800) {
+        thread_info.Dump();
+        throw std::runtime_error("Ooopppss");
+    }
+    thread_info.memaccesses.clear();
     thread_info.within_bb = 0;
 }
 
 void
-LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb)
+LogRunner::OnThread(uint thread_id, uint handle_id, uint sp)
+{
+    std::cout << std::dec << thread_id << "] ";
+    std::cout << "Thread ID:" << std::dec << handle_id
+        << " SP:0x" << std::hex << sp
+        << std::endl;
+}
+
+void
+LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb, std::vector<df_memaccess_c> &memaccesses)
 {
     if (show_options_ & LR_SHOW_BB) {
         std::cout << std::dec << thread_id << "] ";
-        std::cout << std::dec << "s:" << std::dec << last_bb.s_depth << " ";
         last_bb.Dump();
+    }
+
+    if (show_options_ & LR_SHOW_MEM) {
+        for (auto &memaccess: memaccesses)
+            memaccess.Dump(1);
+    }
+}
+
+void
+LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
+{
+    bool verbose = show_options_ & LR_SHOW_LIBCALL;
+
+    if (!verbose)
+    for (auto filter_addr : filter_apicall_addrs_) {
+        if (filter_addr == apicall_ret.func) {
+            verbose = true; break;
+        }
+    }
+    if (verbose) {
+        std::cout << std::dec << thread_id << "] ";
+        apicall_ret.Dump();
     }
 }
 
@@ -1181,14 +1223,15 @@ thread_info_c::SaveState(std::ostream &out)
 
     write_u32(out, j);
 
+    // stacks
     write_u32(out, stacks.size());
 
-    int k = -1;
     for (uint i = 0; i < stacks.size(); ++i) {
         df_stackitem_c &stackitem_cur = stacks[i];
         stackitem_cur.SaveState(out);
     }
 
+    // pending state
     write_u32(out, pending_state);
 
     if (pending_state) {
@@ -1196,6 +1239,14 @@ thread_info_c::SaveState(std::ostream &out)
     }
     
     last_bb.SaveState(out);
+
+    // memaccesses
+    write_u32(out, memaccesses.size());
+
+    for (uint i = 0; i < memaccesses.size(); ++i) {
+        df_memaccess_c &memaccess_cur = memaccesses[i];
+        memaccess_cur.SaveState(out);
+    }
 }
 
 void
@@ -1232,6 +1283,7 @@ thread_info_c::RestoreState(std::istream &in)
     int j = (signed)read_u32(in); // apicall_now
     apicall_now = j == -1 ? nullptr : &apicalls[j];
 
+    // stacks
     stacks.clear();
     
     for(int i = read_u32(in);   // stacks size
@@ -1248,6 +1300,16 @@ thread_info_c::RestoreState(std::istream &in)
     }
     
     last_bb.RestoreState(in);
+
+    // memaccesses
+    memaccesses.clear();
+    
+    for(int i = read_u32(in);   // memaccesses size
+        i; i--) {
+        memaccesses.push_back(df_memaccess_c());
+        df_memaccess_c *memaccess_cur = &memaccesses.back();
+        memaccess_cur->RestoreState(in);
+    }
 }
 
 void
@@ -1303,6 +1365,12 @@ thread_info_c::Dump(int indent)
     }
     std::cout << _tab << "last_bb: ";
     last_bb.Dump(indent + 2);
+
+    for (uint i = 0; i < memaccesses.size(); ++i) {
+        df_memaccess_c &memaccess_cur = memaccesses[i];
+        std::cout <<  _tab << "  memaccesses[" << i << "]: ";
+        memaccess_cur.Dump(indent + 2);
+    }
 }
 
 void
@@ -1399,6 +1467,7 @@ df_apicall_c::Dump(int indent)
     }
     std::cout << "} => 0x" << std::hex << ret_addr;
     std::cout << " ts:" << std::dec << ts;
+    std::cout << " s-depth:" << s_depth;
     std::cout << std::endl;
 }
 
@@ -1423,6 +1492,7 @@ df_stackitem_c::Dump(int indent)
         default: std::cout << link;
     }
     std::cout << " ts:" << std::dec << ts;
+    std::cout << " s-depth:" << s_depth;
     std::cout << std::endl;
 }
 
@@ -1449,4 +1519,52 @@ void df_stackitem_c::RestoreState(std::istream &in)
     flags = read_u32(in);
     ts = read_u64(in);
     s_depth = read_u32(in);
+}
+
+void
+df_memaccess_c::Dump(int indent)
+{
+    std::string _tab = std::string(indent, ' ');
+
+    std::cout << _tab;
+    if (is_write) std::cout << "mem write 0x"; else std::cout << "mem read 0x";
+    std::cout << std::hex << addr << " pc:0x" << pc;
+    std::cout << " size:" << std::dec << size;
+    if (is_loop) {
+        std::cout << " loop:" << loop_from << ".." << loop_to;
+    }
+    std::cout << std::endl;
+}
+
+void
+df_memaccess_c::SaveState(std::ostream &out)
+{
+    out << "memo";
+
+    write_u32(out, pc);
+    write_u32(out, addr);
+    write_u32(out, size);
+    write_bool(out, is_write);
+    write_bool(out, is_loop);
+    if (is_loop) {
+        write_u32(out, loop_from);
+        write_u32(out, loop_to);
+    }
+}
+
+void
+df_memaccess_c::RestoreState(std::istream &in)
+{
+    if (!read_match(in, "memo"))
+        throw std::runtime_error("mismatch marker 'memo'");
+
+    pc = read_u32(in);
+    addr = read_u32(in);
+    size = read_u32(in);
+    is_write = read_bool(in);
+    is_loop = read_bool(in);
+    if (is_loop) {
+        loop_from = read_u32(in);
+        loop_to = read_u32(in);
+    }
 }

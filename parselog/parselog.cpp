@@ -160,9 +160,9 @@ main(int argc, PCHAR* argv)
         }
 
         for (auto name : opt_procnames)
-            runner.FilterApiCall(name);
-        runner.SetOptions(0);
-        // runner.SetOptions( LR_SHOW_BB | LR_SHOW_LIBCALL);
+            runner.FilterApiCall(name); 
+        runner.SetOptions(0); // LR_SHOW_BB | LR_SHOW_MEM | LR_SHOW_LIBCALL
+        //runner.SetOptions( LR_SHOW_BB | LR_SHOW_LIBCALL);
 
         auto start = std::chrono::system_clock::now();
         if (opt_use_multithread)
