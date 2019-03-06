@@ -33,7 +33,7 @@ For %%A in ("%filename%") do (
     Set Name=%%~nxA
 )
 
-SET Options=-memtrace
+rem SET Options=-memtrace
 SET ARGS=-c %LOCAL%\bin\%CONFIG%\%1.dll %Options% -- %Name% %4 %5 %6 %7 %8 %9
 
 :run

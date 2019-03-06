@@ -48,6 +48,16 @@ By default the CONFIG is `relase` or called **RelWithDebInfo**, so the output wi
 the client dll.
 
 The trace file will have name `bbtrace.dll.calc.exe.yyyymmdd-hhiiss.ext` with the ext:
-* txt -> info or stdout
-* log
-* number -> id with per thread trace
+* txt -> info or log
+* bin -> main thread trace
+* bin.%id% -> per thread trace
+
+## How to parse log:
+
+If the executable name `calc.exe` then:
+
+```
+run parselog -j bin\RelWithDebInfo\bbtrace.dll.calc.exe.yyyymmdd-hhiiss.ext`
+```
+
+Option *-j* to enable multithread. The parselog actually doing nothing. 

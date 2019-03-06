@@ -4,3 +4,4 @@ build7/
 build_*/
 logs/
 bin/
+.DS_Store
