@@ -17,7 +17,7 @@
 #include <chrono>
 #include <ctime>
 
-#include "logrunner.h"
+#include "../logrunner.h"
 
 volatile std::sig_atomic_t gSignalStatus;
 static LogRunner *g_runner = nullptr;

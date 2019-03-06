@@ -7,9 +7,11 @@ IF "%1"=="" (
   GOTO:eof
 )
 
-IF "%1"=="parselog" (
-  echo bin\%CONFIG%\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
-  start bin\%CONFIG%\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
+set TOOL_PATH=bin\%CONFIG%\%1.exe
+IF exist "%TOOL_PATH%" (
+  echo %TOOL_PATH%
+  echo %TOOL_PATH% %2 %3 %4 %5 %6 %7 %8 %9
+  start "" "%TOOL_PATH%" %2 %3 %4 %5 %6 %7 %8 %9
   GOTO :eof
 )
 

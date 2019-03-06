@@ -20,7 +20,8 @@ if (MSVC)
   target_compile_definitions(parselog_core PUBLIC WINDOWS X86_32)
 endif(MSVC)
 
-add_executable(parselog parselog.cpp)
+# Analyzer: parselog runner
+add_executable(parselog analyzer/parselog.cpp)
 
 if (MSVC)
   #target_include_directories (parselog PUBLIC ${CMAKE_SOURCE_DIR}/src)
@@ -31,3 +32,13 @@ if (MSVC)
 endif(MSVC)
 
 target_link_libraries(parselog parselog_core)
+
+# Analyzer: grapher runner
+add_executable(grapher analyzer/grapher.cpp)
+
+if (MSVC)
+  target_compile_definitions(grapher PUBLIC WINDOWS X86_32)
+  set_target_properties(grapher PROPERTIES COMPILE_FLAGS "/EHsc /Zi")
+endif(MSVC)
+
+target_link_libraries(grapher parselog_core)

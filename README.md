@@ -57,7 +57,15 @@ The trace file will have name `bbtrace.dll.calc.exe.yyyymmdd-hhiiss.ext` with th
 If the executable name `calc.exe` then:
 
 ```
-run parselog -j bin\RelWithDebInfo\bbtrace.dll.calc.exe.yyyymmdd-hhiiss.ext`
+run parselog -j bin\RelWithDebInfo\bbtrace.dll.calc.exe.yyyymmdd-hhiiss.bin`
 ```
 
-Option *-j* to enable multithread. The parselog actually doing nothing. 
+Option *-j* to enable multithread. The parselog actually doing nothing.
+
+If you want to dump the list of basic block executed use `grapher`
+
+```
+run grapher -j bin\RelWithDebInfo\bbtrace.dll.calc.exe.yyyymmdd-hhiiss.bin`
+```
+
+The output csv will be: bin\RelWithDebInfo\bbtrace.dll.calc.exe.yyyymmdd-hhiiss.csv
