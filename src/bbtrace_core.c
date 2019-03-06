@@ -1284,6 +1284,18 @@ get_info_file() {
   return info_file;
 }
 
+char* set_dump_path(client_id_t id, dr_time_t* start_time)
+{
+    const char *app_name = dr_get_application_name();
+    dr_snprintf(dump_path, sizeof(dump_path),
+        "%s.%s.%04d%02d%02d-%02d%02d%02d",
+        dr_get_client_path(id), app_name,
+        start_time->year, start_time->month, start_time->day,
+        start_time->hour, start_time->minute, start_time->second
+        );
+    return dump_path;
+}
+
 void
 bbtrace_init(client_id_t id, bool is_enable_memtrace)
 {
@@ -1303,6 +1315,7 @@ bbtrace_init(client_id_t id, bool is_enable_memtrace)
         );
 
     dr_snprintf(path, sizeof(path), "%s.txt", dump_path);
+
     info_file = dr_open_file(path, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
 
     drmgr_init();

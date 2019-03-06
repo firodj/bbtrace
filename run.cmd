@@ -1,13 +1,15 @@
 @echo off
 
+set CONFIG=RelWithDebInfo
+
 IF "%1"=="" (
   (echo Please supply a client, eg. `bbtrace`)
   GOTO:eof
 )
 
 IF "%1"=="parselog" (
-  echo bin\Debug\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
-  start bin\Debug\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
+  echo bin\%CONFIG%\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
+  start bin\%CONFIG%\parselog.exe %2 %3 %4 %5 %6 %7 %8 %9
   GOTO :eof
 )
 
@@ -32,11 +34,11 @@ For %%A in ("%filename%") do (
 )
 
 SET Options=-memtrace
-SET ARGS=-c %LOCAL%\bin\Debug\%1.dll %Options% -- %Name% %4 %5 %6 %7 %8 %9
+SET ARGS=-c %LOCAL%\bin\%CONFIG%\%1.dll %Options% -- %Name% %4 %5 %6 %7 %8 %9
 
 :run
 
-del %LOCAL%\bin\Debug\%1.dll.*.EXE.*
+del %LOCAL%\bin\%CONFIG%\%1.dll.*.EXE.*
 
 pushd %Folder%
 

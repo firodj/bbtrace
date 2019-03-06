@@ -4,22 +4,50 @@ This clients will record the code flow by basic block address.
 
 ## How to build:
 
-```
-mkdir build
-cd build
+If you have Visual Studio 15 (2017), open the **x86 Native Tools Command Prompt**.
+Set the environment variable `DYNAMORIO_HOME` into dynamorio 
+(eg. `C:\Workspace\dynamorio\exports`).
 
-cmake -G "Visual Studio 12" -DDynamoRIO_DIR=d:\LIB\dynamorio\build\cmake ..
-cmake --build . --config RelWithDebInfo
+See `build.cmd` to create `build` dir and prepare `cmake`.
+
+```
+build
+```
+
+Then see `make.cmd` to run compile.
+
+```
+make
+```
+
+Or
+
+```
+make bbtrace
+make parselog
 ```
 
 ## How to test:
 
-```
-drrun.exe -c test_bbtrace.dll -- test_app.exe > ..\tests\test_bbtrace.expect 2>&1
-```
-
-## How to build only **bbtrace_flow**:
+See `test.cmd`:
 
 ```
-cmake --build . --config Debug --target bbtrace_flow
+test
 ```
+
+## How to run:
+
+See `run.cmd`, to run instrumentation for example:
+
+```
+run bbtrace -- %windir%\system32\calc.exe
+```
+
+By default the CONFIG is `relase` or called **RelWithDebInfo**, so the output will be at
+`bin\RelWithDebInfo` including the bbtrace trace output which is placed on same directory as
+the client dll.
+
+The trace file will have name `bbtrace.dll.calc.exe.yyyymmdd-hhiiss.ext` with the ext:
+* txt -> info or stdout
+* log
+* number -> id with per thread trace

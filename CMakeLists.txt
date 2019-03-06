@@ -35,6 +35,10 @@ if (MSVC)
     target_link_libraries(test_bbtrace bbtrace_core)
 
     configure_DynamoRIO_client(test_bbtrace)
+    use_DynamoRIO_extension(test_bbtrace drmgr)
+    use_DynamoRIO_extension(test_bbtrace drwrap)
+    use_DynamoRIO_extension(test_bbtrace drutil)
+    use_DynamoRIO_extension(test_bbtrace drcontainers)
 
     # add_test(RevengiTests test_bbtrace)
     # drrun.exe -c test_bbtrace.dll -- test_app.exe > ..\tests\test_bbtrace.expect 2>&1

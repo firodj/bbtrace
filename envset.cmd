@@ -4,4 +4,5 @@ for %%A in (C,D) do (
 	set DYNAMORIO_HOME=%%A:\DynamoRIO-6.2.0-2
   )
 )
-set PATH=%DYNAMORIO_HOME%\lib32\debug;%PATH%
+set CONFIG=release
+set PATH=%DYNAMORIO_HOME%\lib32\%CONFIG%;%PATH%

@@ -9,6 +9,7 @@
 #include <utility>
 #include <thread>
 #include <algorithm>
+#include <cassert>
 
 #include "logrunner.h"
 #include "serializer.h"

@@ -1,19 +1,29 @@
+
+#include "dr_api.h"
+#include "datatypes.h"
 #include "bbtrace_core.h"
 
 static app_pc exe_start;
 static thread_id_t main_thread = 0;
+static client_id_t g_client_id = 0;
 
-void test_bbtrace_log_filename()
+void test_set_dump_path()
 {
 	const char *actual = NULL;
+	dr_time_t start_time;
+	start_time.year = 2019;
+	start_time.month = 3;
+	start_time.day = 6;
+	start_time.hour = 21;
+	start_time.minute = 0;
+	start_time.second = 0;
 
-	actual = bbtrace_log_filename(0);
-	dr_fprintf(STDERR, "%s\n", actual);
+	actual = set_dump_path(g_client_id, &start_time);
 
-	actual = bbtrace_log_filename(10);
 	dr_fprintf(STDERR, "%s\n", actual);
 }
 
+#if 0
 void test_bbtrace_formatinfo_module() {
 	module_data_t exe;
 	const char *actual = NULL;
@@ -137,7 +147,7 @@ void test_instrlist_app_length(void *drcontext) {
 }
 
 void test_bbtrace_dump_thread_data(void *drcontext) {
-  bbtrace_init();
+  bbtrace_init(g_client_id, false);
 
   per_thread_t *tls_field = create_bbtrace_thread_data(drcontext);
   size_t written;
@@ -193,6 +203,7 @@ void test_bbtrace_append_hex() {
   *next = '\0';
   dr_fprintf(STDERR, "output = %s\n", out);
 }
+#endif
 
 /*
 TEST(oh, ah) {
@@ -223,9 +234,10 @@ TEST(oh, ah) {
 
 static void run_tests(void *drcontext)
 {
-	dr_fprintf(STDERR, "[ ] test_bbtrace_log_filename:\n");
-	test_bbtrace_log_filename();
+	dr_fprintf(STDERR, "[ ] test_set_dump_path:\n");
+	test_set_dump_path();
 
+#if 0
 	dr_fprintf(STDERR, "[ ] test_bbtrace_formatinfo_module:\n");
 	test_bbtrace_formatinfo_module();
 
@@ -244,10 +256,8 @@ static void run_tests(void *drcontext)
 	dr_fprintf(STDERR, "[ ] test_instrlist_app_length:\n");
 	test_instrlist_app_length(drcontext);
 
-#if 0
 	dr_fprintf(STDERR, "[ ] test_bbtrace_dump_thread_data:\n");
 	test_bbtrace_dump_thread_data(drcontext);
-#endif
 
 	dr_fprintf(STDERR, "[ ] test_bbtrace_escape_string:\n");
 	test_bbtrace_escape_string();
@@ -260,6 +270,7 @@ static void run_tests(void *drcontext)
 
 	dr_fprintf(STDERR, "[ ] test_bbtrace_append_hex:\n");
 	test_bbtrace_append_hex();
+#endif
 
 	dr_fprintf(STDERR, "[ ] DONE testing.\n");
 }
@@ -296,6 +307,7 @@ thread_exit_event(void *drcontext)
 DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])
 {
 	module_data_t *exe = dr_get_main_module();
+	g_client_id = id;
 
 	if (exe) {
 		exe_start = exe->start;
