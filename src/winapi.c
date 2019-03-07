@@ -855,7 +855,7 @@ after_CreateThread(void *wrapcxt, void *user_data)
         buf_item.params[0] = GetThreadId(hThread);
     }
 
-    dr_fprintf(get_info_file(), "CreateThread HANDLE:%x id:%d\n", hThread, buf_item.params[0]);
+    dr_fprintf(get_info_file(), "tid:%d,hthread:0x%x\n", buf_item.params[0], hThread);
     dr_printf("CreateThread HANDLE:%x id:%d\n", hThread, buf_item.params[0]);
 
     dump_event_data(&buf_item);
@@ -1044,7 +1044,7 @@ after_VirtualProtect(void *wrapcxt, void *user_data)
         (uint) ptr, size, protect);
 
     if (get_info_file() != INVALID_FILE) {
-      dr_fprintf(get_info_file(), "VirtualProtect: %X %X %X\n",
+      dr_fprintf(get_info_file(), "virtualprotect:0x%X,size:0x%X,protect:0x%X\n",
           (uint) ptr, size, protect);
     }
     module_data_t *mod;
@@ -1070,7 +1070,7 @@ after_VirtualAlloc(void *wrapcxt, void *user_data)
     dr_printf("VirtualAlloc: %X %X %X\n",
         (uint) ptr, size, protect);
     if (get_info_file() != INVALID_FILE) {
-      dr_fprintf(get_info_file(), "VirtualAlloc: %X %X %X\n",
+      dr_fprintf(get_info_file(), "virtualalloc:0x%X,size:0x%X,protect:0x%X\n",
           (uint) ptr, size, protect);
     }
   }
@@ -1137,7 +1137,8 @@ after_RegisterClassEx(void *wrapcxt, void *user_data)
     drwrap_wrap_ex(wndproc, WndProc_entry, NULL,
         0, DRWRAP_UNWIND_ON_EXCEPTION | DRWRAP_CALLCONV_STDCALL);
 
-    dr_fprintf(get_info_file(), "RegisterClassEx ClassName:%s WndProc:%X\n", wndclass->lpszClassName, wndproc);
+    dr_fprintf(get_info_file(), "wndproc:0x%X,registerclass:%s\n",
+        wndproc, wndclass->lpszClassName);
     dr_printf("RegisterClassEx ClassName:%s WndProc:%X\n", wndclass->lpszClassName, wndproc);
 }
 

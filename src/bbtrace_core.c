@@ -397,7 +397,8 @@ dump_thread_mcontext(void *drcontext)
 
     thd_data->dump_mcontext = true;
 
-    dr_fprintf(info_file, "%d] SP:0x%x, FLAGS:0x%x\n", thread_id, mcontext.xsp, mcontext.xflags);
+    dr_fprintf(info_file, "tid:%d,sp:0x%x,flags:0x%x\n",
+        thread_id, mcontext.xsp, mcontext.xflags);
     dr_printf("%d] SP:0x%x, FLAGS:0x%x\n", thread_id, mcontext.xsp, mcontext.xflags);
 }
 
@@ -411,7 +412,6 @@ event_thread_init(void *drcontext)
     if (main_thread_id == 0) {
         main_thread_id = thread_id;
         dr_snprintf(path, sizeof(path), "%s.bin", dump_path);
-        dr_fprintf(info_file, "Main thread: #%d\n", thread_id);
     } else {
         dr_snprintf(path, sizeof(path), "%s.bin.%d", dump_path, thread_id);
     }
@@ -428,7 +428,9 @@ event_thread_init(void *drcontext)
     thd_data->loop_xcx = 0;
     thd_data->dump_mcontext = false;
 
-    dr_fprintf(info_file, "%d] Open dump file: %s\n", thread_id, path);
+    char *is_main = "";
+    if (main_thread_id == thread_id) is_main = ",main";
+    dr_fprintf(info_file, "tid:%d%s,dump:%s\n", thread_id, is_main, path);
     dr_printf("%d] Open dump file: %s\n", thread_id, path);
 }
 
@@ -451,6 +453,7 @@ static bool
 event_exception(void *drcontext, dr_exception_t *excpt)
 {
     per_thread_t *thd_data;
+    thread_id_t thread_id = dr_get_thread_id(drcontext);
     buf_exception_t buf_item = {0};
 
     buf_item.kind = KIND_EXCEPTION;
@@ -465,7 +468,8 @@ event_exception(void *drcontext, dr_exception_t *excpt)
     *(buf_exception_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_exception_t);
 
-    dr_fprintf(info_file, "Exception %X at %X\n", buf_item.code, buf_item.pc);
+    dr_fprintf(info_file, "tid:%d,exception:0x%X,exception_addr:0x%X\n", 
+        thread_id, buf_item.code, buf_item.pc);
 
     return true;
 }
@@ -1301,6 +1305,9 @@ bbtrace_init(client_id_t id, bool is_enable_memtrace)
 {
     char path[MAXIMUM_PATH];
     dr_time_t start_time;
+    process_id_t pid = dr_get_process_id();
+    const char *app_name = dr_get_application_name();
+
     dr_get_time(&start_time);
 
     enable_memtrace = is_enable_memtrace;
@@ -1309,6 +1316,8 @@ bbtrace_init(client_id_t id, bool is_enable_memtrace)
     dr_snprintf(path, sizeof(path), "%s.txt", dump_path);
 
     info_file = dr_open_file(path, DR_FILE_WRITE_OVERWRITE | DR_FILE_ALLOW_LARGE);
+
+    dr_fprintf(info_file, "pid:%d,name:%s\n", pid, app_name);
 
     drmgr_init();
     drutil_init();
