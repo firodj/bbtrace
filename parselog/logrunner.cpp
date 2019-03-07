@@ -463,6 +463,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
     thread_info.last_bb.pc   = buf_bb.pc;
     thread_info.last_bb.next = next_bb;
     thread_info.last_bb.link = bb_link;
+    thread_info.last_bb.len_last = len_last_instr;
     thread_info.last_bb.is_sub = bb_is_sub;
     thread_info.last_bb.ts   = thread_info.now_ts;
     thread_info.last_bb.s_depth = thread_info.stacks.size();

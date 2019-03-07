@@ -30,6 +30,7 @@ public:
         struct {
             uint link:2;
             bool is_sub:1;
+            uint len_last:5; // take most 15 bytes (need 4bits)
         };
     };
     uint64 ts;
