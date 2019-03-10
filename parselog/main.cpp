@@ -17,7 +17,7 @@
 #include <chrono>
 #include <ctime>
 
-#include "../logrunner.h"
+#include "logrunner.h"
 
 volatile std::sig_atomic_t gSignalStatus;
 static LogRunner *g_runner = nullptr;
@@ -131,10 +131,10 @@ main(int argc, PCHAR* argv)
     // Install a signal handler
     std::signal(SIGINT, signal_handler);
 
-    LogRunner runner;
-    g_runner = &runner;
+    g_runner = LogRunner::instance();
+    g_runner->ListObservers();
 
-    if (runner.Open(filename)) {
+    if (g_runner->Open(filename)) {
         if (opt_input_state) {
             uint sav_cnt = get_available_states(filename);
             if (sav_cnt > 1) {
@@ -144,7 +144,7 @@ main(int argc, PCHAR* argv)
                 std::ifstream fsymb;
                 fsymb.open(oss.str(), std::ifstream::in | std::ifstream::binary);
                 std::cout << "Reading from " << oss.str() << std::endl;
-                runner.RestoreSymbols(fsymb);
+                g_runner->RestoreSymbols(fsymb);
 
                 oss.str("");
                 oss.clear();
@@ -153,22 +153,20 @@ main(int argc, PCHAR* argv)
                 std::ifstream frun;
                 frun.open(oss.str(), std::ifstream::in | std::ifstream::binary);
                 std::cout << "Reading from " << oss.str() << std::endl;
-                runner.RestoreState(frun);
+                g_runner->RestoreState(frun);
 
-                //runner.Dump();
+                //g_runner->Dump();
             }
         }
 
         for (auto name : opt_procnames)
-            runner.FilterApiCall(name); 
-        runner.SetOptions(0); // LR_SHOW_BB | LR_SHOW_MEM | LR_SHOW_LIBCALL
-        //runner.SetOptions( LR_SHOW_BB | LR_SHOW_LIBCALL);
+            g_runner->FilterApiCall(name); 
 
         auto start = std::chrono::system_clock::now();
         if (opt_use_multithread)
-            runner.RunMT();
+            g_runner->RunMT();
         else
-            runner.Run();
+            g_runner->Run();
         auto end = std::chrono::system_clock::now();
 
         if (gSignalStatus) {
@@ -179,7 +177,7 @@ main(int argc, PCHAR* argv)
             std::ofstream fsymb;
             fsymb.open(oss.str(), std::ofstream::out | std::ofstream::binary);
             std::cout << "Writing to " << oss.str() << std::endl;
-            runner.SaveSymbols(fsymb);
+            g_runner->SaveSymbols(fsymb);
 
             oss.str("");
             oss.clear();
@@ -188,7 +186,7 @@ main(int argc, PCHAR* argv)
             std::ofstream frun;
             frun.open(oss.str(), std::ofstream::out | std::ofstream::binary);
             std::cout << "Writing to " << oss.str() << std::endl;
-            runner.SaveState(frun);
+            g_runner->SaveState(frun);
 
             gSignalStatus = 0;
         }
@@ -203,7 +201,7 @@ main(int argc, PCHAR* argv)
 
     }
     std::cout << "===" << std::endl;
-    runner.Summary();
+    g_runner->Summary();
 
     return 0;
 }

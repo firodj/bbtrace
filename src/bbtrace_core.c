@@ -1183,20 +1183,20 @@ event_bb_insert(void *drcontext, void *tag, instrlist_t *bb, instr_t *instr,
 
 #if WITH_APPCALL
         /* instrument calls and returns -- ignore far calls/rets */
-#if 0
+        /***
         if (instr_is_call_direct(instr)) {
             if (is_from_exe(instr_get_app_pc(instr), false)) {
                 dr_insert_call_instrumentation(drcontext, bb, instr, (app_pc)at_call);
             }
         }
         else
-#endif
+         ***/
           // TODO: check only when there is base/index regs
         if (instr_is_call_indirect(instr)) {
             dr_insert_mbr_instrumentation(drcontext, bb, instr, (app_pc)at_call_ind,
                                    SPILL_SLOT_1);
         }
-#if 0
+        /***
         else
         if (instr_is_return(instr)) {
             if (is_from_exe(instr_get_app_pc(instr), false)) {
@@ -1204,7 +1204,7 @@ event_bb_insert(void *drcontext, void *tag, instrlist_t *bb, instr_t *instr,
                                           SPILL_SLOT_1);
             }
         }
-#endif
+         ***/
 #endif
     }
 

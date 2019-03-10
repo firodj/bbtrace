@@ -11,10 +11,6 @@
 #include "logparser.h"
 #include "threadinfo.hpp"
 
-#define LR_SHOW_BB 0x1
-#define LR_SHOW_MEM 0x2
-#define LR_SHOW_LIBCALL 0x4
-
 typedef std::map<uint, uint> map_uint_uint_t;
 typedef std::map<uint, uint64> map_uint_uint64_t;
 typedef std::map<app_pc, std::string> map_app_pc_string_t;
@@ -60,6 +56,8 @@ typedef std::map<uint, sync_sequence_t> map_sync_sequence_t;
 typedef std::map<uint, thread_info_c> map_thread_info_t;
 typedef std::map<uint, thread_stats_c> map_thread_stats_t;
 
+class LogRunnerObserver;
+
 class LogRunner
 {
 private:
@@ -70,12 +68,12 @@ private:
     std::mutex message_mu_;
     std::condition_variable message_cv_;
     std::queue<runner_message_t> messages_;
+    std::vector<LogRunnerObserver*> observers_;
 
 protected:
     map_thread_info_t info_threads_;
     map_thread_stats_t stats_threads_;
     std::string filename_;
-    uint show_options_;
     std::vector<uint> filter_apicall_addrs_;
     std::vector<std::string> filter_apicall_names_;
 
@@ -93,20 +91,21 @@ protected:
     void DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc);
     void DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write);
     void DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop);
-    virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
-    virtual void OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses);
-    virtual void OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api);
-    virtual void OnThread(uint thread_id, uint handle_id, uint sp);
+    void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
+    void OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses);
+    void OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api);
+    void OnThread(uint thread_id, uint handle_id, uint sp);
+    void OnPush(uint thread_id, df_stackitem_c &the_bb);
+    void OnPop(uint thread_id, df_stackitem_c &the_bb);
 
 public:
-    LogRunner(): show_options_(0) {}
-
-    bool Open(std::string &filename);
-
-    void SetOptions(uint show_options)
-    {
-        show_options_ = show_options;
+    LogRunner() {}
+    static LogRunner* instance();
+    void AddObserver(LogRunnerObserver *observer) {
+        observers_.push_back(observer);
     }
+    void ListObservers();
+    bool Open(std::string &filename);
 
     void FinishThread(thread_info_c &thread_info);
 

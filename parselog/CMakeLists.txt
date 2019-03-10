@@ -21,7 +21,7 @@ if (MSVC)
 endif(MSVC)
 
 # Analyzer: parselog runner
-add_executable(parselog analyzer/parselog.cpp)
+add_executable(parselog main.cpp analyzer/printer.cpp)
 
 if (MSVC)
   #target_include_directories (parselog PUBLIC ${CMAKE_SOURCE_DIR}/src)

@@ -12,6 +12,7 @@
 #include <cassert>
 
 #include "logrunner.h"
+#include "observer.hpp"
 #include "serializer.h"
 
 bool
@@ -406,9 +407,16 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
                 if (thread_info.last_kind == KIND_BB)
                     bb_untracked_api = last_item;
 
-                thread_info.stacks.erase(
-                    thread_info.stacks.begin()+i-1,
-                    thread_info.stacks.end());
+                while (thread_info.stacks.size() > i-1) {
+                    df_stackitem_c& item = thread_info.stacks.back();
+                    item.ts = thread_info.now_ts;
+                    OnPop(thread_info.id, item);
+                    thread_info.stacks.pop_back();
+                }
+                // thread_info.stacks.erase(
+                //     thread_info.stacks.begin()+i-1,
+                //     thread_info.stacks.end());
+
                 bb_is_sub = false;
             }
         }
@@ -418,9 +426,15 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
         for (i = thread_info.stacks.size(); i > 0; --i) {
             df_stackitem_c& item = thread_info.stacks[i-1];
             if (item.kind == KIND_BB && item.next == thread_info.within_bb) {
-                thread_info.stacks.erase(
-                    thread_info.stacks.begin()+i-1,
-                    thread_info.stacks.end());
+                while (thread_info.stacks.size() > i-1) {
+                    df_stackitem_c& item = thread_info.stacks.back();
+                    item.ts = thread_info.now_ts;
+                    OnPop(thread_info.id, item);
+                    thread_info.stacks.pop_back();
+                }
+                // thread_info.stacks.erase(
+                //     thread_info.stacks.begin()+i-1,
+                //     thread_info.stacks.end());
                 break;
             }
             if (item.kind == KIND_LIB_CALL)
@@ -431,13 +445,16 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
                 bb_is_sub = true;
 
                 std::cout << std::dec << thread_info.id;
-                std::cout << "] Mismatch stack, return to 0x" << std::hex << thread_info.within_bb
+                std::cout << "] DoKindBB: mismatch stack, return to 0x" << std::hex << thread_info.within_bb
                     << " from 0x" << thread_info.last_bb.pc
                     << " stack size = " << std::dec << thread_info.stacks.size();
 
                 if (thread_info.stacks.size()) {
                     df_stackitem_c& item = thread_info.stacks.back();
                     std::cout << " TOP: 0x" << std::hex << item.pc;
+                    if (item.kind) {
+                        std::cout << " '" << std::string((char*)&item.kind, 4) << "'";
+                    }
                 }
 
                 if (thread_info.apicalls.size() ) {
@@ -472,6 +489,7 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
         thread_info.stacks.push_back(df_stackitem_c());
         df_stackitem_c& item = thread_info.stacks.back();
         item = thread_info.last_bb;
+        OnPush(thread_info.id, item);
     }
 
     thread_info.bb_count++;
@@ -515,6 +533,7 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
     int s_depth = thread_info.stacks.size();
     thread_info.stacks.push_back(df_stackitem_c());
     df_stackitem_c& item = thread_info.stacks.back();
+    OnPush(thread_info.id, item);
 
     item.kind = KIND_LIB_CALL;
     item.pc   = buf_libcall.func;
@@ -567,15 +586,21 @@ LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret)
     for (i = thread_info.stacks.size(); i > 0; --i) {
         df_stackitem_c& item = thread_info.stacks[i-1];
         if (item.kind == KIND_LIB_CALL && item.next == buf_libret.ret_addr) {
-            thread_info.stacks.erase(
-                thread_info.stacks.begin()+i-1,
-                thread_info.stacks.end());
+            while (thread_info.stacks.size() > i-1) {
+                df_stackitem_c& item = thread_info.stacks.back();
+                item.ts = thread_info.now_ts;
+                OnPop(thread_info.id, item);
+                thread_info.stacks.pop_back();
+            }
+            // thread_info.stacks.erase(
+            //     thread_info.stacks.begin()+i-1,
+            //     thread_info.stacks.end());
             break;
         }
     }
     if (i == 0) {
         std::cout << std::dec << thread_info.id;
-        std::cout << "] Mismatch stack, return to 0x" << std::hex << buf_libret.ret_addr
+        std::cout << "] DoKindLibRet: mismatch stack, return to 0x" << std::hex << buf_libret.ret_addr
             << " from func 0x" << libret_last.func
             << " stack size = " << std::dec << thread_info.stacks.size()
             << std::endl;
@@ -744,15 +769,16 @@ LogRunner::DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop)
 void
 LogRunner::DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc)
 {
+    bool verbose = false; // show_options_ & LR_SHOW_WNDPROC;
+    if (!verbose) return;
+
     uint umsg = buf_wndproc.params[0];
     uint wparam = buf_wndproc.params[1];
     uint lparam = buf_wndproc.params[2];
 
-#if 0
     std::cout << std::dec << thread_info.id << "] ";
-    std::cout << "wnd proc (" << std::hex << umsg << ", " << wparam << ", " << lparam
+    std::cout << "wnd proc (0x" << std::hex << umsg << ", 0x" << wparam << ", 0x" << lparam
         << ")" << std::endl;
-#endif
 }
 
 void
@@ -894,58 +920,6 @@ LogRunner::DoEndBB(thread_info_c &thread_info)
 
     thread_info.memaccesses.clear();
     thread_info.within_bb = 0;
-}
-
-void
-LogRunner::OnThread(uint thread_id, uint handle_id, uint sp)
-{
-    std::cout << std::dec << thread_id << "] ";
-    std::cout << "Thread ID:" << std::dec << handle_id
-        << " SP:0x" << std::hex << sp
-        << std::endl;
-}
-
-void
-LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses)
-{
-    if (show_options_ & LR_SHOW_BB) {
-        std::cout << std::dec << thread_id << "] ";
-        last_bb.Dump();
-    }
-
-    if (show_options_ & LR_SHOW_MEM) {
-        for (auto &memaccess: memaccesses)
-            memaccess.Dump(1);
-    }
-}
-
-void
-LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
-{
-    bool verbose = show_options_ & LR_SHOW_LIBCALL;
-
-    if (!verbose)
-    for (auto filter_addr : filter_apicall_addrs_) {
-        if (filter_addr == apicall_ret.func) {
-            verbose = true; break;
-        }
-    }
-    if (verbose) {
-        std::cout << std::dec << thread_id << "] ";
-        apicall_ret.Dump();
-    }
-}
-
-void
-LogRunner::OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api)
-{
-    bool verbose = show_options_ & LR_SHOW_LIBCALL;
-
-    if (verbose) {
-        std::cout << std::dec << thread_id << "] Untracked api by bb:0x" << std::hex << bb_untracked_api.pc
-            << " ts:" << std::dec << bb_untracked_api.ts
-            << std::endl;
-    }
 }
 
 void
@@ -1585,4 +1559,63 @@ df_memaccess_c::RestoreState(std::istream &in)
         loop_from = read_u32(in);
         loop_to = read_u32(in);
     }
+}
+
+LogRunner*
+LogRunner::instance() {
+    static std::unique_ptr<LogRunner> logrunner = std::make_unique<LogRunner>();
+    return logrunner.get();
+};
+
+LogRunnerObserver::LogRunnerObserver() {
+    logrunner_ = LogRunner::instance();
+    logrunner_->AddObserver(this);
+}
+
+void
+LogRunner::ListObservers() {
+    std::cout << "observers: " << observers_.size() << std::endl;
+    for (auto &observer : observers_) {
+        std::cout << "- " << observer->GetName() << std::endl;
+    }
+}
+
+void
+LogRunner::OnThread(uint thread_id, uint handle_id, uint sp)
+{
+    for (auto &observer : observers_)
+        observer->OnThread(thread_id, handle_id, sp);
+}
+
+void LogRunner::OnPush(uint thread_id, df_stackitem_c &the_bb)
+{
+    for (auto &observer : observers_)
+        observer->OnPush(thread_id, the_bb);
+}
+
+void LogRunner::OnPop(uint thread_id, df_stackitem_c &the_bb)
+{
+    for (auto &observer : observers_)
+        observer->OnPop(thread_id, the_bb);
+}
+
+void
+LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses)
+{
+    for (auto &observer : observers_)
+        observer->OnBB(thread_id, last_bb, memaccesses);
+}
+
+void
+LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret)
+{
+    for (auto &observer : observers_)
+        observer->OnApiCall(thread_id, apicall_ret);
+}
+
+void
+LogRunner::OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api)
+{
+    for (auto &observer : observers_)
+        observer->OnApiUntracked(thread_id, bb_untracked_api);
 }

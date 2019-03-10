@@ -1,23 +1,23 @@
 @echo off
+setlocal
 
 set CONFIG=RelWithDebInfo
 
 IF "%1"=="" (
   (echo Please supply a client, eg. `bbtrace`)
-  GOTO:eof
+  GOTO:stop
 )
 
 set TOOL_PATH=bin\%CONFIG%\%1.exe
 IF exist "%TOOL_PATH%" (
-  echo %TOOL_PATH%
   echo %TOOL_PATH% %2 %3 %4 %5 %6 %7 %8 %9
   start "" "%TOOL_PATH%" %2 %3 %4 %5 %6 %7 %8 %9
-  GOTO :eof
+  GOTO:stop
 )
 
 IF "%2"=="" (
   (echo Please use `--` then application exe)
-  GOTO:eof
+  GOTO:stop
 )
 
 SET LOCAL=%~dp0
@@ -27,7 +27,7 @@ Set filename=%3
 
 if not exist "%filename%" (
 	(echo No application %filename%)
-	GOTO:eof
+	GOTO:stop
 )
 
 For %%A in ("%filename%") do (
@@ -35,7 +35,7 @@ For %%A in ("%filename%") do (
     Set Name=%%~nxA
 )
 
-rem SET Options=-memtrace
+SET Options=-memtrace
 SET ARGS=-c %LOCAL%\bin\%CONFIG%\%1.dll %Options% -- %Name% %4 %5 %6 %7 %8 %9
 
 :run
@@ -49,3 +49,6 @@ echo %DYNAMORIO_HOME%\bin32\drrun.exe -syntax_intel %ARGS%
 
 %DYNAMORIO_HOME%\bin32\drrun.exe -syntax_intel %ARGS%
 popd
+
+:stop
+endlocal

@@ -1,6 +1,10 @@
 #pragma once
 
 #include <thread>
+#include <vector>
+#include <string>
+#include <map>
+#include "logparser.h"
 
 class df_apicall_c {
 public:

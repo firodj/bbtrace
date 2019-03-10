@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fstream>
 #include "buffer.h"
 
 class logparser_c {
