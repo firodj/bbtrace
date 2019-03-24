@@ -4,7 +4,14 @@ cmake_minimum_required (VERSION 3.9.1)
 
 project (PARSELOG)
 
-set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD 14)
+
+set(BUILD_EXAMPLES OFF CACHE BOOL "argh Examples")
+set(BUILD_TESTS OFF CACHE BOOL "argh Tests")
+set(REPLXX_BuildExamples OFF CACHE BOOL "Replxx Examples")
+
+add_subdirectory(ext/replxx)
+add_subdirectory(ext/argh)
 
 include_directories(${BBTRACE_SOURCE_DIR}/src)
 #  ${CMAKE_SOURCE_DIR}/capstone/include
@@ -31,7 +38,7 @@ if (MSVC)
   #set_target_properties(parselog PROPERTIES COMPILE_FLAGS "-m32" LINK_FLAGS "-m32")
 endif(MSVC)
 
-target_link_libraries(parselog parselog_core)
+target_link_libraries(parselog parselog_core replxx argh)
 
 # Analyzer: grapher runner
 add_executable(grapher analyzer/grapher.cpp)
@@ -41,4 +48,4 @@ if (MSVC)
   set_target_properties(grapher PROPERTIES COMPILE_FLAGS "/EHsc /Zi")
 endif(MSVC)
 
-target_link_libraries(grapher parselog_core)
+target_link_libraries(grapher parselog_core replxx argh)

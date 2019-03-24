@@ -1,0 +1,6 @@
+[submodule "parselog/ext/replxx"]
+	path = parselog/ext/replxx
+	url = https://github.com/firodj/replxx.git
+[submodule "parselog/ext/argh"]
+	path = parselog/ext/argh
+	url = https://github.com/firodj/argh.git
