@@ -21,8 +21,10 @@ typedef struct {
     block_jump_t jump;
     uint end;
     uint last;
+    std::string name;
 } block_t;
 typedef std::map<uint, block_t> blocks_t;
+typedef std::map<uint, std::string> symbols_t;
 
 class tree_t;
 
@@ -150,8 +152,8 @@ typedef std::map<uint, history_t> histories_t;
 
 #pragma pack(1)
 typedef struct {
-    uint addr;
-    uint size;
+    uint32_t addr;
+    uint32_t size;
 } pkt_tree_t;
 #pragma pack()
 
@@ -161,6 +163,7 @@ typedef std::unordered_map<uint, app_pc_list_t> app_pc_map_t;
 class FlameGraph{
 private:
     blocks_t blocks_;
+    symbols_t symbols_;
     histories_t histories_;
     array_uint_t histories_order_;
     app_pc_map_t pc_to_pc_;
@@ -194,6 +197,10 @@ public:
     void AddBlock(block_t &block) {
         if (BlockExists(block.addr)) return;
         blocks_[block.addr] = block;
+
+        if (block.kind == block_t::APICALL) {
+            symbols_[block.addr] = block.name;
+        }
     }
 #if 0
     void DoStart2(history_t &history, block_t *block)
@@ -333,8 +340,17 @@ public:
     void OutputTree(std::ostream *out, tree_t *tree, int level = 0) {
         pkt_tree_t pkt_tree;
 
-        pkt_tree.addr = tree->start_block ? tree->start_block->addr : 0;
+        pkt_tree.addr = 0; 
         pkt_tree.size = tree->size;
+        std::string name;
+
+        if (tree->start_block) {
+            pkt_tree.addr = tree->start_block->addr;
+        
+            if (tree->start_block->kind == block_t::APICALL) {
+                name = tree->start_block->name;
+            }
+        }
 
         out->write((const char *)&pkt_tree, sizeof(pkt_tree));
 
@@ -344,10 +360,29 @@ public:
         }
     }
 
+    void OutputSymbols(std::ostream *out)
+    {
+        uint32_t size = symbols_.size();
+        std::cout << "symbols size: " << size << std::endl;
+        out->write((const char*)&size, sizeof(size));
+
+        for (auto &symbol: symbols_) {
+            uint8_t name_len = symbol.second.length() > 255 ? 255 : symbol.second.length();
+            if (name_len) {
+                uint32_t addr = symbol.first;
+                out->write((const char*)&addr, sizeof(addr)); // 4
+                out->write((const char*)&name_len, sizeof(name_len)); // 1
+                out->write(symbol.second.c_str(), name_len); // N
+            }
+        }
+    }
+
     void PrintTreeBIN(std::string filename)
     {
         std::cout << "Writing: " << filename << std::endl;
         std::ofstream outfile(filename, std::ofstream::binary);
+
+        OutputSymbols(&outfile);
 
         for (auto k : histories_order_) {
             history_t &history = histories_[k];
@@ -364,14 +399,12 @@ public:
     }
 
     void DumpTree(tree_t *tree, int level = 0) {
-        pkt_tree_t pkt_tree;
-
-        pkt_tree.addr = tree->start_block ? tree->start_block->addr : 0;
-        pkt_tree.size = tree->size;
+        uint32_t addr = tree->start_block ? tree->start_block->addr : 0;
+        uint size = tree->size;
 
         std::cout << std::string(level, ' ');
-        std::cout << "+ addr: 0x" << std::hex << pkt_tree.addr;
-        std::cout << " (" <<  std::dec << pkt_tree.size << ")" << std::endl;
+        std::cout << "+ addr: 0x" << std::hex << addr;
+        std::cout << " (" <<  std::dec << size << ")" << std::endl;
 
         for(auto k : tree->children_order) {
             tree_t *child = tree->children[k];

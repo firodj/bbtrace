@@ -10,7 +10,8 @@ FlameGraph g_flamegraph;
 class Grapher: public LogRunnerObserver
 {
     bool
-    assign_block(block_t &block, df_stackitem_c &last_bb) {
+    assign_block(block_t &block, df_stackitem_c &last_bb)
+    {
         if (last_bb.kind == KIND_BB) {
             block.kind = block_t::BLOCK;
         }
@@ -23,6 +24,18 @@ class Grapher: public LogRunnerObserver
             case LINK_JMP: block.jump = block_t::JMP; break;
             default: block.jump = block_t::NONE;
         }
+        return true;
+    }
+
+    bool
+    assign_apicall(block_t &block, df_apicall_c *apicall_now)
+    {
+        block.kind = block_t::APICALL;
+        block.addr = apicall_now->func;
+        block.end = apicall_now->ret_addr;
+        block.last = 0;
+        block.jump = block_t::RET;
+        block.name = apicall_now->name;
         return true;
     }
 
@@ -70,28 +83,49 @@ public:
     void
     OnApiCall(uint thread_id, df_apicall_c &apicall_ret) override
     {
-        if (verbose_) {
-            std::cout << std::dec << thread_id << "] OnApiCall: ";
-            apicall_ret.Dump();
-        }
-
-        //if (push_count_++ > 10) RequestToStop();
+#if 0
+        std::cout << std::dec << thread_id << "] OnApiCall Return: ";
+        apicall_ret.Dump();
+#endif
     }
 
     void
     OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api) override
     {
-        if (verbose_) {       
-            std::cout << std::dec << thread_id << "] Untracked API: ";
-            bb_untracked_api.Dump();
-        }
+#if 0
+        std::cout << std::dec << thread_id << "] Untracked API: ";
+        bb_untracked_api.Dump();
+#endif
     }
 
     void OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now) override 
     {
-        if (verbose_) {
-            // std::cout << "OnPush: ";
-            // the_bb.Dump();
+
+        if (apicall_now) {
+#if 0
+            std::cout << std::dec << thread_id << "] Call API: ";
+            apicall_now->Dump();
+#endif
+
+            uint addr = apicall_now->func;
+            if (! g_flamegraph.BlockExists(addr)) 
+            {
+                std::lock_guard<std::mutex> lock(g_flamegraph_mx);
+                block_t block;
+                if (assign_apicall(block, apicall_now))
+                    g_flamegraph.AddBlock(block);
+            }
+
+            block_t *block = g_flamegraph.GetBlock(addr);
+            history_t &history = g_flamegraph.GetHistory(thread_id);
+            
+            try {
+                uint depth = apicall_now->s_depth + 1;
+                history.start_sub(block, depth);
+            } catch (std::exception &e ) {
+                std::cerr << "Exception: " << e.what() << std::endl;
+                logrunner_->RequestToStop();
+            }
         }
     }
 
@@ -102,7 +136,14 @@ public:
             the_bb.Dump();
         }
         
-        // if (push_count_++ > 100) logrunner_->RequestToStop();
+#if 0
+        if (thread_id == 0) {
+            if (push_count_++ > 100) {
+                logrunner_->RequestToStop();
+                std::cout << "Trial Mode." << std::endl;
+            }
+        }
+#endif
     }
 
     void
@@ -125,7 +166,16 @@ public:
         }
         
         g_flamegraph.PrintTreeBIN(treename);
-        // g_flamegraph.DumpHistory();
+    }
+
+    void
+    OnCommand(int argc, const char* argv[]) override {
+        if (argc < 1) return;
+        
+        std::string command = argv[0];
+        if (command == "dump") {
+            g_flamegraph.DumpHistory();
+        }
     }
 };
 

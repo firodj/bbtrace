@@ -67,10 +67,7 @@ class Drawing:
                     name = '(root)'
                     theme = 'red'
                 else:
-                    if False:
-                        symbol = self.reader.infoparser.symbols.get(addr)
-                    else:
-                        symbol = None
+                    symbol = self.reader.symbols.get(addr)
 
                     if symbol:
                         theme = 'purple'
@@ -80,9 +77,9 @@ class Drawing:
                     name = idc.get_name(addr)
                     if not name:
                         if symbol:
-                            name = symbol['name']
+                            name = symbol
                         else:
-                            name = "proc_%X" % (addr,)
+                            name = "sub_%X" % (addr,)
 
                 if addr not in self.colors:
                     self.colors[addr] = self.new_color(theme)
