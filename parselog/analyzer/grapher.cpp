@@ -1,187 +1,132 @@
-#ifdef _MSC_VER
-  #include <windows.h>
-#else
-  typedef char* PCHAR;
-#endif
-
 #include <iostream>
-#include <fstream>
-#include <sstream>
-#include <string>
-#include <cstring>
-#include <stdexcept>
-#include <unordered_map>
-#include <map>
-#include <vector>
-#include <cassert>
-#include <csignal>
-#include <chrono>
-#include <ctime>
 #include <mutex>
+#include <string>
+#include "../observer.hpp"
+#include "../flamegraph.h"
 
-#include "../logrunner.h"
+std::mutex g_flamegraph_mx;
+FlameGraph g_flamegraph;
 
-typedef std::unordered_map<uint, df_stackitem_c> bb_collection_t;
-
-bb_collection_t basic_blocks;
-std::mutex g_basic_blocks_mx;
-
-class MyLogRunner: public LogRunner
+class Grapher: public LogRunnerObserver
 {
-public:
-    void
-    OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses) override
-    {
-        if (basic_blocks.find(last_bb.pc) != basic_blocks.end()) return;
-
-        {
-            std::lock_guard<std::mutex> lock(g_basic_blocks_mx);
-            basic_blocks[last_bb.pc] = last_bb;
+    bool
+    assign_block(block_t &block, df_stackitem_c &last_bb) {
+        if (last_bb.kind == KIND_BB) {
+            block.kind = block_t::BLOCK;
         }
-    }
-
-    void
-    DumpCSV()
-    {
-        std::string csvname = filename_;
-
-        std::string::size_type n;
-        n = filename_.rfind('.');
-        if (n != std::string::npos) {
-            csvname = filename_.substr(0, n);
+        block.addr = last_bb.pc;
+        block.end = last_bb.next;
+        block.last = last_bb.next - last_bb.len_last;
+        switch (last_bb.link) {
+            case LINK_CALL: block.jump = block_t::CALL; break;
+            case LINK_RETURN: block.jump = block_t::RET; break;
+            case LINK_JMP: block.jump = block_t::JMP; break;
+            default: block.jump = block_t::NONE;
         }
-        csvname += ".csv";
-
-        std::ofstream outfile;
-        outfile.open(csvname.c_str());
-        std::cout << "Dump CSV: " << csvname << " ..." << std::endl;
-        outfile << "pc,next,is_sub,link,ts" << std::endl;
-        for (bb_collection_t::value_type kv : basic_blocks)
-        {
-            df_stackitem_c &last_bb = kv.second;
-
-            // std::cout << std::dec << thread_id << ",";
-            outfile << "0x" << std::hex << last_bb.pc << ",";
-            outfile << "0x" << last_bb.next << ",";
-            outfile << std::dec << last_bb.is_sub << ",";
-            switch (last_bb.link) {
-                case LINK_CALL: outfile << "CALL"; break;
-                case LINK_RETURN: outfile << "RETURN"; break;
-                case LINK_JMP: outfile << "JMP"; break;
-                default: outfile << last_bb.link;
-            }
-            outfile << "," << last_bb.ts << std::endl;
-        }
-    }
-};
-
-static MyLogRunner *g_runner = nullptr;
-
-// Ctrl+C Handler
-
-volatile std::sig_atomic_t gSignalStatus;
-
-class AutoPause {
-public:
-    ~AutoPause() {
-#ifdef _MSC_VER
-        pause();
-#endif
-    }
-    void pause()
-    {
-        std::cout << "Press any key to conitnue . . .";
-        std::cin.get();
-    }
-};
-
-void
-signal_handler(int signal)
-{
-    gSignalStatus = signal;
-    if (g_runner)
-        g_runner->RequestToStop();
-}
-
-// Options
-std::string g_filename;
-bool opt_use_multithread = false;
-
-bool
-parse_args(int argc, PCHAR* argv)
-{
-    if (argc < 2) {
-        std::cout << "Please provide .bin file" << std::endl;
         return true;
     }
 
-    for (int a=1; a<argc; a++) {
-        char *argn = argv[a];
-        if (argn && *argn == '-')
-            argn++;
-        else {
-            g_filename = argv[a];
-            continue;
+    bool verbose_;
+    int push_count_;
+
+public:
+
+    std::string GetName() override { return "Grapher"; }
+
+    void
+    OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses) override
+    {
+        // if (last_bb.ts > 10) verbose_ = true;
+
+        if (false && last_bb.is_sub) {
+            std::cout << std::dec << thread_id << "] On BB: ";
+            last_bb.Dump();
         }
 
-        std::string opt_name(argn);
-        if (opt_name == "j") {
-            opt_use_multithread = true;
-            std::cout << "enable Multithread." << std::endl;
-        } else {
-            std::cout << "Unknown option: '" << opt_name << "'" << std::endl;
-            return true;
+        if (! g_flamegraph.BlockExists(last_bb.pc)) 
+        {
+            std::lock_guard<std::mutex> lock(g_flamegraph_mx);
+            block_t block;
+            if (assign_block(block, last_bb))
+                g_flamegraph.AddBlock(block);
+        }
+
+        block_t *block = g_flamegraph.GetBlock(last_bb.pc);
+        history_t &history = g_flamegraph.GetHistory(thread_id);
+        
+        try {
+            uint depth = last_bb.s_depth + 1;
+            if (last_bb.is_sub || history.last_block == nullptr) {
+                history.start_sub(block, depth);
+            } else {
+                history.last_bb(block, depth);
+            }
+        } catch (std::exception &e ) {
+            std::cerr << "Exception: " << e.what() << std::endl;
+            logrunner_->RequestToStop();
         }
     }
 
-    return false;
-}
-
-// Main App
-int
-main(int argc, PCHAR* argv)
-{
-    AutoPause auto_pause;
-
-    assert(sizeof(mem_ref_t) == 16);
-    assert(sizeof(buf_string_t) == 6*16);
-
-    if (parse_args(argc, argv)) return 1;
-
-    // Install a signal handler
-    std::signal(SIGINT, signal_handler);
-
-    MyLogRunner runner;
-    g_runner = &runner;
-
-    if (runner.Open(g_filename)) {
-        runner.SetOptions(0); // LR_SHOW_BB | LR_SHOW_MEM | LR_SHOW_LIBCALL
-        //runner.SetOptions( LR_SHOW_BB | LR_SHOW_LIBCALL);
-
-        auto start = std::chrono::system_clock::now();
-        if (opt_use_multithread)
-            runner.RunMT();
-        else
-            runner.Run();
-        auto end = std::chrono::system_clock::now();
-
-        if (gSignalStatus) {
-            std::cout << "Break!" << std::endl;
-            gSignalStatus = 0;
+    void
+    OnApiCall(uint thread_id, df_apicall_c &apicall_ret) override
+    {
+        if (verbose_) {
+            std::cout << std::dec << thread_id << "] OnApiCall: ";
+            apicall_ret.Dump();
         }
 
-        std::cout << "+++" << std::endl;
-        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end-start);
-        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end-start-minutes);
-
-        std::time_t end_time = std::chrono::system_clock::to_time_t(end);
-        std::cout << "finished at " << std::ctime(&end_time)
-                  << "elapsed time: " << minutes.count() << ":" << seconds.count() << "s" << std::endl;
-
-        runner.DumpCSV();
+        //if (push_count_++ > 10) RequestToStop();
     }
-    std::cout << "===" << std::endl;
-    runner.Summary();
 
-    return 0;
-}
+    void
+    OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api) override
+    {
+        if (verbose_) {       
+            std::cout << std::dec << thread_id << "] Untracked API: ";
+            bb_untracked_api.Dump();
+        }
+    }
+
+    void OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now) override 
+    {
+        if (verbose_) {
+            // std::cout << "OnPush: ";
+            // the_bb.Dump();
+        }
+    }
+
+    void OnPop(uint thread_id, df_stackitem_c &the_bb) override
+    {
+        if (verbose_) {
+            std::cout << std::dec << thread_id << "] On Pop: ";
+            the_bb.Dump();
+        }
+        
+        // if (push_count_++ > 100) logrunner_->RequestToStop();
+    }
+
+    void
+    OnStart() override {
+        push_count_ = 0;
+        verbose_ = false;
+    }
+
+    void
+    OnFinish() override {
+        std::string prefixname = logrunner_->GetPrefix();
+
+        std::string csvname = prefixname + ".bb.csv";
+        g_flamegraph.DumpBlocksCSV(csvname);
+
+        std::string treename = prefixname + ".fgraph";
+        std::string exename = logrunner_->GetExecutable();
+        if (! exename.empty()) {
+            treename = exename + ".fgraph";
+        }
+        
+        g_flamegraph.PrintTreeBIN(treename);
+        // g_flamegraph.DumpHistory();
+    }
+};
+
+Grapher observer = Grapher();

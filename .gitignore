@@ -5,3 +5,4 @@ build_*/
 logs/
 bin/
 .DS_Store
+replxx_history.txt

@@ -4,12 +4,12 @@ import re
 import struct
 
 class FlameGraphReader:
-    def __init__(self, infoparser):
-        self.infoparser = infoparser
+    def __init__(self, filename):
+        self.filename = filename
         self.roots = None
 
     def parse(self):
-        callname = re.sub(r'\.log\.csv$', '.log.tree', self.infoparser.infoname)
+        callname = self.filename + ".fgraph"
         if not os.path.exists(callname):
             print "Unable to open", callname
             return False

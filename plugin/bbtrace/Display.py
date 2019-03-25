@@ -67,7 +67,11 @@ class Drawing:
                     name = '(root)'
                     theme = 'red'
                 else:
-                    symbol = self.reader.infoparser.symbols.get(addr)
+                    if False:
+                        symbol = self.reader.infoparser.symbols.get(addr)
+                    else:
+                        symbol = None
+
                     if symbol:
                         theme = 'purple'
                     else:
@@ -263,16 +267,17 @@ class Display(idaapi.PluginForm):
         exename = idc.GetInputFile()
         path = os.path.dirname(idc.GetInputFilePath())
 
-        infoname = "bbtrace.%s.log.csv" % (exename,)
-        infoname = os.path.join(path, infoname)
+        filename = os.path.join(path, exename)
 
-        self.infoparser = InfoParser(infoname)
-        self.infoparser.load()
+        if False:
+            self.infoparser = InfoParser(infoname)
+            self.infoparser.load()
 
-        self.flamegraph = FlameGraphReader(self.infoparser)
+        self.flamegraph = FlameGraphReader(filename)
         self.flamegraph.parse()
 
-        self.infoparser.flow()
+        if False:
+            self.infoparser.flow()
 
         self.canvas = None
 
@@ -387,28 +392,29 @@ class Display(idaapi.PluginForm):
         col = 0xccffcc
         col2 = 0xbbeebb
 
-        for ea, basic_block in self.infoparser.basic_blocks.iteritems():
-            while ea != idaapi.BADADDR:
-                idc.set_color(ea, idc.CIC_ITEM, col)
-                ea = idc.next_head(ea, basic_block['end'])
+        if False:
+            for ea, basic_block in self.infoparser.basic_blocks.iteritems():
+                while ea != idaapi.BADADDR:
+                    idc.set_color(ea, idc.CIC_ITEM, col)
+                    ea = idc.next_head(ea, basic_block['end'])
 
-        for target_pc, flow in self.infoparser.flows.iteritems():
-            refs = []
-            for xref in idautils.XrefsTo(target_pc):
-                refs.append(xref.frm)
+            for target_pc, flow in self.infoparser.flows.iteritems():
+                refs = []
+                for xref in idautils.XrefsTo(target_pc):
+                    refs.append(xref.frm)
 
-            for jump_from_pc, flowtype in flow.iteritems():
+                for jump_from_pc, flowtype in flow.iteritems():
 
-                if jump_from_pc in refs:
-                    continue
+                    if jump_from_pc in refs:
+                        continue
 
-                if ida_ua.ua_mnem(jump_from_pc) == 'call':
-                    flowtype = idaapi.fl_CN
-                else:
-                    flowtype = idaapi.fl_JN
+                    if ida_ua.ua_mnem(jump_from_pc) == 'call':
+                        flowtype = idaapi.fl_CN
+                    else:
+                        flowtype = idaapi.fl_JN
 
-                idc.set_color(jump_from_pc, idc.CIC_ITEM, col2)
-                idc.AddCodeXref(jump_from_pc, target_pc, flowtype)
+                    idc.set_color(jump_from_pc, idc.CIC_ITEM, col2)
+                    idc.AddCodeXref(jump_from_pc, target_pc, flowtype)
 
     def _ui_selection_changed(self, index):
         self.canvas.setActiveIndex(self._combobox.itemData(index))

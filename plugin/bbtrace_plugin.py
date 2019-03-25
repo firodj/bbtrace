@@ -3,13 +3,12 @@ import idaapi
 import idautils
 import idc
 import traceback
-from bbtrace.InfoParser import InfoParser
 from bbtrace.Display import Display
 
 
-PLUGIN_VERSION = "0.0.1"
+PLUGIN_VERSION = "0.0.2"
 AUTHORS        = "Fadhil Mandaga"
-DATE           = "2018"
+DATE           = "2019"
 
 # Stunned panda face icon data.
 ICON_DATA = "".join([

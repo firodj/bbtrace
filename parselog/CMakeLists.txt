@@ -41,7 +41,7 @@ endif(MSVC)
 target_link_libraries(parselog parselog_core replxx argh)
 
 # Analyzer: grapher runner
-add_executable(grapher analyzer/grapher.cpp)
+add_executable(grapher main.cpp analyzer/grapher.cpp)
 
 if (MSVC)
   target_compile_definitions(grapher PUBLIC WINDOWS X86_32)

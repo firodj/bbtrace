@@ -7,6 +7,7 @@
 #include <map>
 #include <unordered_map>
 #include <vector>
+#include <sstream>
 
 #define WITHOUT_DR
 #include "../src/datatypes.h"
@@ -39,9 +40,10 @@ public:
 
     uint size;
     uint64 hits;
+    uint depth;
 
     tree_t(tree_t * _parent, block_t * _block) :
-        parent(_parent), start_block(_block), size(1), hits(0), end_block(nullptr)
+        parent(_parent), start_block(_block), size(0), hits(0), end_block(nullptr), depth(0)
     {
     }
 
@@ -57,13 +59,43 @@ public:
         }
     }
 
-    tree_t *get_child(block_t *_block)
+    bool is_root() {
+        return parent == nullptr;
+    }
+
+    tree_t *get_child(block_t *_block, uint _depth)
     {
-        if (children.find(_block->addr) == children.end()) {
-            children[_block->addr] = new tree_t(this, _block);
-            children_order.push_back(_block->addr);
+        // Determine _parent
+        assert(_depth >= 1);
+        tree_t *_parent = get_parent(_depth - 1);
+
+        if (!_parent) {
+            std::ostringstream ss;
+            ss << "cannot find parent with depth:" << _depth;
+            throw std::runtime_error(ss.str());
         }
-        return children[_block->addr];
+
+        // Find duplicate block
+        tree_t *_child = nullptr;
+        if (_parent->children.find(_block->addr) == _parent->children.end()) {
+            _child = new tree_t(this, _block);
+            _parent->children[_block->addr] = _child;
+            _child->depth = _parent->depth + 1;
+            _parent->children_order.push_back(_block->addr);
+        } else {
+            _child = _parent->children[_block->addr];
+        }
+        return _child;
+    }
+
+    tree_t *get_parent(uint _depth)
+    {
+        tree_t *_parent = this;
+
+        for (;_parent;_parent=_parent->parent) 
+            if (_parent->depth == _depth) break;
+        
+        return _parent;
     }
 };
 
@@ -81,6 +113,36 @@ public:
 
     virtual ~history_t()
     {
+    }
+
+    void start_sub(block_t *block, uint depth)
+    {
+        last_tree = last_tree->get_child(block, depth);
+        
+        if (last_tree->depth != depth) {
+            std::ostringstream ss;
+            ss << "mismatch depth in:" << depth << " tree:" << last_tree->depth;
+            throw std::runtime_error(ss.str());
+        }
+
+        last_tree->end_block = nullptr;
+        last_tree->hits++;
+
+        last_block = block;
+    }
+
+    void last_bb(block_t *block, uint depth)
+    {
+        tree_t *current = last_tree->get_parent(depth);
+        if (! current) {
+            std::ostringstream ss;
+            ss << "cannot set last_bb in:" << depth;
+            throw std::runtime_error(ss.str());
+        }
+
+        current->end_block = last_block;
+
+        last_block = block;
     }
 };
 
@@ -103,6 +165,7 @@ private:
     array_uint_t histories_order_;
     app_pc_map_t pc_to_pc_;
 
+public:
     history_t& GetHistory(uint thread_id)
     {
         histories_t::iterator it = histories_.find(thread_id);
@@ -114,7 +177,13 @@ private:
         return histories_[thread_id];
     }
 
-public:
+    block_t* GetBlock(uint addr)
+    {
+        blocks_t::iterator it = blocks_.find(addr);
+        if (it == blocks_.end()) return nullptr;
+        return &it->second;
+    }
+
     FlameGraph(){
     }
 
@@ -126,7 +195,7 @@ public:
         if (BlockExists(block.addr)) return;
         blocks_[block.addr] = block;
     }
-
+#if 0
     void DoStart2(history_t &history, block_t *block)
     {
         if (history.last_tree->parent) {
@@ -217,7 +286,8 @@ public:
                         }
                     } else
                     if (history.last_block->jump == block_t::RET) {
-                        if (!DoPopInto2(history, block)) DoStart2(history, block);
+                        if (!DoPopInto2(history, block))
+                            DoStart2(history, block);
                     } else
                     if (history.last_block->jump == block_t::JMP) {
                         //
@@ -233,7 +303,8 @@ public:
             } else {
                 assert(history.last_block->kind == block_t::APICALL);
                 if (block->kind == block_t::BLOCK) {
-                    if (!DoPopInto2(history, block)) DoPush2(history, block);
+                    if (!DoPopInto2(history, block))
+                        DoPush2(history, block);
                 } else {
                     assert(block->kind == block_t::APICALL);
                     //
@@ -245,13 +316,18 @@ public:
         history.last_block = block;
     }
 
+#endif
+
     uint CalculateSizeTree(tree_t *tree, int level = 0)
     {
-      for(auto& kv : tree->children) {
-          tree_t *child = kv.second;
-          tree->size += CalculateSizeTree(child, level + 1);
-      }
-      return tree->size;
+        if (tree->size == 0) {
+            for(auto& kv : tree->children) {
+                tree_t *child = kv.second;
+                tree->size += CalculateSizeTree(child, level + 1);
+            }
+            tree->size += 1; //itself;
+        }
+        return tree->size;
     }
 
     void OutputTree(std::ostream *out, tree_t *tree, int level = 0) {
@@ -268,7 +344,7 @@ public:
         }
     }
 
-    void PrintTree(const char *filename)
+    void PrintTreeBIN(std::string filename)
     {
         std::cout << "Writing: " << filename << std::endl;
         std::ofstream outfile(filename, std::ofstream::binary);
@@ -278,10 +354,43 @@ public:
 
             std::cout << "thread id: " << history.thread_id << std::endl;
 
-            uint size = CalculateSizeTree(&history.root);
+            uint size = history.root.size;
+            if (!size)
+                size = CalculateSizeTree(&history.root);
 
             std::cout << "dump tree: ..." << size << std::endl;
             OutputTree(&outfile, &history.root, 0);
+        }
+    }
+
+    void DumpTree(tree_t *tree, int level = 0) {
+        pkt_tree_t pkt_tree;
+
+        pkt_tree.addr = tree->start_block ? tree->start_block->addr : 0;
+        pkt_tree.size = tree->size;
+
+        std::cout << std::string(level, ' ');
+        std::cout << "+ addr: 0x" << std::hex << pkt_tree.addr;
+        std::cout << " (" <<  std::dec << pkt_tree.size << ")" << std::endl;
+
+        for(auto k : tree->children_order) {
+            tree_t *child = tree->children[k];
+            DumpTree(child, level + 1);
+        }
+    }
+
+    void DumpHistory()
+    {
+        for (auto k : histories_order_) {
+            history_t &history = histories_[k];
+
+            std::cout << "Thread id: " << history.thread_id << std::endl;
+
+            uint size = history.root.size;
+            if (!size)
+                size = CalculateSizeTree(&history.root);
+
+            DumpTree(&history.root, 0);
         }
     }
 
@@ -343,6 +452,40 @@ public:
                         << std::setw(10) << std::showbase << it2->first << ","
                         << std::dec << it2->second << std::endl;
             }
+        }
+    }
+
+    void
+    DumpBlocksCSV(std::string &csvname)
+    {
+        std::cout << "Dump CSV: " << csvname << " ..." << std::endl;
+
+        std::ofstream outfile;
+        outfile.open(csvname.c_str());
+        
+        outfile << "pc,kind,next,jump" << std::endl;
+        for (blocks_t::value_type kv : blocks_)
+        {
+            block_t &block = kv.second;
+
+            // std::cout << std::dec << thread_id << ",";
+            outfile << "0x" << std::hex << block.addr << ",";
+            switch(block.kind) {
+                case block_t::BLOCK:
+                    outfile << "BLOCK,"; break;
+                case block_t::APICALL:
+                    outfile << "APICALL,"; break;
+                default:
+                    outfile << ",";
+            }
+            outfile << "0x" << block.end << ",";
+            switch (block.jump) {
+                case block_t::CALL: outfile << "CALL"; break;
+                case block_t::RET: outfile << "RET"; break;
+                case block_t::JMP: outfile << "JMP"; break;
+                default: outfile << "";
+            }
+            outfile << std::endl;
         }
     }
 };
