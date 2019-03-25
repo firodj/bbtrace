@@ -5,6 +5,7 @@
 #endif
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -41,9 +42,43 @@ public:
     }
 };
 
+void
+split_arg(char* s, std::vector<const char*> &ar)
+{
+    char *p = 0;
+    for (; *s; s++) {
+        if (*s == '\t' || *s == ' ') {
+            if (p) {
+                *s = 0;
+                ar.emplace_back(p);
+                p = 0;
+            }
+        } else {
+            if (!p) p = s;
+        }
+    }
+
+    if (p)
+        ar.emplace_back(p);
+}
+
+void
+split_string(std::string s, std::vector<std::string>& ar) {
+    std::string delimiter = ",";
+
+    size_t pos = 0;
+    std::string token;
+    while ((pos = s.find(delimiter)) != std::string::npos) {
+        token = s.substr(0, pos);
+        ar.push_back(token);
+        s.erase(0, pos + delimiter.length());
+    }
+}
+
 class Options {
 public:
     std::string filename;
+    std::string exename;
 
     uint opt_memtrack = 0;
     bool opt_input_state = false;
@@ -51,26 +86,13 @@ public:
 
     std::vector<std::string> opt_procnames;
 
-    argh::parser cmdl;
-
     Options()
     {
     }
 
-    void split_string(std::string s, std::vector<std::string>& ar) {
-        std::string delimiter = ",";
-
-        size_t pos = 0;
-        std::string token;
-        while ((pos = s.find(delimiter)) != std::string::npos) {
-            token = s.substr(0, pos);
-            ar.push_back(token);
-            s.erase(0, pos + delimiter.length());
-        }
-    }
-
     bool process(int argc, PCHAR* argv)
     {
+        argh::parser cmdl;
         cmdl.parse(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
 
         if (!(cmdl(1) >> filename)) {
@@ -80,6 +102,8 @@ public:
 
         if (cmdl["-i"])
             opt_input_state = true;
+        
+        cmdl("-z") >> exename;
         
         std::string procnames;
         if (cmdl("-p") >> procnames) {
@@ -202,7 +226,7 @@ main(int argc, PCHAR* argv)
 
 	// words to be completed
 	std::vector<std::string> suggests {
-		"run", "quit", "exit", "save", "load",
+		"run", "quit", "exit", "save", "load", "history", "clear"
     };
 
     Replxx rx;
@@ -244,6 +268,10 @@ main(int argc, PCHAR* argv)
         return 1;
     }
 
+    if (! g_options.exename.empty()) {
+        g_runner->SetExecutable(g_options.exename);
+    }
+
     if (g_options.opt_input_state)
         load();
 
@@ -265,17 +293,21 @@ main(int argc, PCHAR* argv)
         // change cinput into a std::string
         // easier to manipulate
         std::string input {cinput};
+        std::vector<const char*> ar_input;
 
-        if (input.empty()) {
+        split_arg((char*)cinput, ar_input);
+        argh::parser args(ar_input.size(), ar_input.data());
+
+        if (! args.size()) {
             // user hit enter on an empty line
 
             continue;
 
-        } else if (input.compare(0, 4, "quit") == 0 || input.compare(0, 4, "exit") == 0) {
+        } else if (args[0] == "quit" || args[0] == "exit") {
             // exit the repl
 
             break;
-        } else if (input.compare(0, 3, "run") == 0) {
+        } else if (args[0] == "run") {
             auto start = std::chrono::system_clock::now();
             if (g_options.opt_use_multithread)
                 g_runner->RunMT();
@@ -295,13 +327,36 @@ main(int argc, PCHAR* argv)
                 
             std::cout << "===" << std::endl;
             g_runner->Summary();
-        } else if (input.compare(0, 4, "save") == 0) {
+
+			rx.history_add(input);
+        } else if (args[0] == "save") {
             save();
-        } else if (input.compare(0, 4, "load") == 0) {
+
+			rx.history_add(input);
+        } else if (args[0] == "load") {
             load();
+
+			rx.history_add(input);
+		} else if (args[0] == "history") {
+			// display the current history
+			for (size_t i = 0, sz = rx.history_size(); i < sz; ++i) {
+				std::cout << std::setw(4) << i << ": " << rx.history_line(i) << "\n";
+			}
+
+			rx.history_add(input);
+			continue;
+
+		} else if (args[0] == "clear") {
+			// clear the screen
+			rx.clear_screen();
+
+			rx.history_add(input);
+			continue;
         }
     }
     
+	// save the history
+	rx.history_save(history_file);
 
     return 0;
 }

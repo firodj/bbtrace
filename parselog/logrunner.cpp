@@ -267,7 +267,11 @@ bool LogRunner::Run()
     request_stop_ = false;
     is_multithread_ = false;
 
+    OnStart();
+
     while (Step(it_thread)) ;
+
+    OnFinish();
 
     return true;
 }
@@ -279,6 +283,8 @@ bool LogRunner::RunMT()
     is_multithread_ = true;
 
     assert(info_threads_.find(main_thread_id) != info_threads_.end());
+
+    OnStart();
 
     for (auto &it: info_threads_) {
         assert(it.second.the_thread == nullptr);
@@ -342,6 +348,8 @@ bool LogRunner::RunMT()
             messages_.pop();
         }
     }
+
+    OnFinish();
 
     return true;
 }
@@ -489,7 +497,6 @@ LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb)
         thread_info.stacks.push_back(df_stackitem_c());
         df_stackitem_c& item = thread_info.stacks.back();
         item = thread_info.last_bb;
-        OnPush(thread_info.id, item);
     }
 
     thread_info.bb_count++;
@@ -533,12 +540,15 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
     int s_depth = thread_info.stacks.size();
     thread_info.stacks.push_back(df_stackitem_c());
     df_stackitem_c& item = thread_info.stacks.back();
-    OnPush(thread_info.id, item);
 
     item.kind = KIND_LIB_CALL;
     item.pc   = buf_libcall.func;
     item.next = buf_libcall.ret_addr;
     item.link = 0;
+    item.len_last = 0;
+    item.is_sub = true;
+    item.ts   = thread_info.now_ts;
+    item.s_depth = s_depth;
 
     thread_info.apicalls.push_back(df_apicall_c());
     thread_info.apicall_now = &thread_info.apicalls.back();
@@ -549,6 +559,8 @@ LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall
     thread_info.apicall_now->callargs.push_back((uint)buf_libcall.arg);
     thread_info.apicall_now->ts = thread_info.now_ts;
     thread_info.apicall_now->s_depth = s_depth;
+
+    OnPush(thread_info.id, item, thread_info.apicall_now);
 }
 
 void
@@ -920,6 +932,11 @@ LogRunner::DoEndBB(thread_info_c &thread_info)
 
     thread_info.memaccesses.clear();
     thread_info.within_bb = 0;
+
+    if (thread_info.last_bb.link == LINK_CALL) {
+        df_stackitem_c& item = thread_info.stacks.back();
+        OnPush(thread_info.id, item);
+    }
 }
 
 void
@@ -1092,6 +1109,18 @@ LogRunner::SaveState(std::ostream &out)
 
         thread_info.SaveState(out);
     }
+
+    out << "user";
+    write_u32(out, observers_.size());
+
+    for (auto &observer : observers_) {
+        std::vector<char> data;
+        write_str(out, observer->GetName());
+        observer->SaveState(data);
+        uint32_t sz = data.size();
+        write_u32(out, sz);
+        write_data(out, data.data(), sz);
+    }
 }
 
 void
@@ -1150,7 +1179,20 @@ LogRunner::RestoreState(std::istream &in)
         thread_info.the_thread = nullptr;
     }
 
-    uint32_t thread_id = read_u32(in);
+    if (!read_match(in, "user")) return;
+    for(int i = read_u32(in); i; i--) {
+        std::string name = read_str(in);
+        uint32_t sz = read_u32(in);
+        std::vector<char> data(sz);
+        read_data(in, data.data(), sz);
+
+        for (auto &observer : observers_) {
+            if (observer->GetName() == name) {
+                observer->RestoreState(data);
+                break;
+            }
+        }
+    }
 }
 
 void
@@ -1563,13 +1605,26 @@ df_memaccess_c::RestoreState(std::istream &in)
 
 LogRunner*
 LogRunner::instance() {
-    static std::unique_ptr<LogRunner> logrunner = std::make_unique<LogRunner>();
+    static std::unique_ptr<LogRunner> logrunner = std::unique_ptr<LogRunner>(new LogRunner());
     return logrunner.get();
 };
 
 LogRunnerObserver::LogRunnerObserver() {
-    logrunner_ = LogRunner::instance();
-    logrunner_->AddObserver(this);
+    LogRunner *logrunner = LogRunner::instance();
+    logrunner_ = logrunner;
+    logrunner->AddObserver(this);
+}
+
+void
+LogRunner::AddObserver(LogRunnerObserver *observer)
+{
+    for (auto &stored_observer : observers_) {
+        if (stored_observer->GetName() == observer->GetName()) {
+            std::cout << "Observer: " << observer->GetName() << " already stored." << std::endl;
+            return;
+        }
+    }
+    observers_.push_back(observer);
 }
 
 void
@@ -1587,10 +1642,10 @@ LogRunner::OnThread(uint thread_id, uint handle_id, uint sp)
         observer->OnThread(thread_id, handle_id, sp);
 }
 
-void LogRunner::OnPush(uint thread_id, df_stackitem_c &the_bb)
+void LogRunner::OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now)
 {
     for (auto &observer : observers_)
-        observer->OnPush(thread_id, the_bb);
+        observer->OnPush(thread_id, the_bb, apicall_now);
 }
 
 void LogRunner::OnPop(uint thread_id, df_stackitem_c &the_bb)
@@ -1618,4 +1673,51 @@ LogRunner::OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api)
 {
     for (auto &observer : observers_)
         observer->OnApiUntracked(thread_id, bb_untracked_api);
+}
+
+void
+LogRunner::OnStart()
+{
+    for (auto &observer : observers_)
+        observer->OnStart();
+}
+
+void
+LogRunner::OnFinish()
+{
+    for (auto &observer : observers_)
+        observer->OnFinish();
+}
+
+std::string
+LogRunner::GetPrefix()
+{
+    std::string prefix = filename_;
+    if (filename_.empty())
+        throw std::runtime_error("GetPrefix on empty filename (not Open yet?)");
+    std::string::size_type n;
+    n = filename_.rfind('.');
+    if (n != std::string::npos) {
+        prefix = filename_.substr(0, n);
+    }
+
+    return prefix;
+}
+
+// TODO: will be remove to dataflow
+void
+LogRunner::SetExecutable(std::string exename)
+{
+    std::ifstream f(exename);
+    if (f.good()) 
+        exename_ = exename;
+    else {
+        throw std::runtime_error("SetExecutable on not existent exename");
+    }
+}
+
+std::string
+LogRunner::GetExecutable()
+{
+    return exename_;
 }

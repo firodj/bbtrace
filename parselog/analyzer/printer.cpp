@@ -16,7 +16,7 @@ public:
         show_options_ = 0;
     }
 
-    const char * GetName() override { return "Printer"; }
+    std::string GetName() override { return "Printer"; }
 
     void
     OnThread(uint thread_id, uint handle_id, uint sp) override
@@ -57,7 +57,7 @@ public:
             apicall_ret.Dump();
         }
     }
-
+    
     void
     OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api) override
     {
@@ -68,16 +68,6 @@ public:
                 << " ts:" << std::dec << bb_untracked_api.ts
                 << std::endl;
         }
-    }
-
-    void OnPush(uint thread_id, df_stackitem_c &the_bb) override
-    {
-
-    }
-
-    void OnPop(uint thread_id, df_stackitem_c &the_bb) override
-    {
-
     }
 };
 

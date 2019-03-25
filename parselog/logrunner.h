@@ -10,6 +10,7 @@
 
 #include "logparser.h"
 #include "threadinfo.hpp"
+#include "observer.hpp"
 
 typedef std::map<uint, uint> map_uint_uint_t;
 typedef std::map<uint, uint64> map_uint_uint64_t;
@@ -58,7 +59,7 @@ typedef std::map<uint, thread_stats_c> map_thread_stats_t;
 
 class LogRunnerObserver;
 
-class LogRunner
+class LogRunner: public LogRunnerInterface
 {
 private:
     map_app_pc_string_t symbol_names_;
@@ -74,6 +75,7 @@ protected:
     map_thread_info_t info_threads_;
     map_thread_stats_t stats_threads_;
     std::string filename_;
+    std::string exename_;
     std::vector<uint> filter_apicall_addrs_;
     std::vector<std::string> filter_apicall_names_;
 
@@ -92,21 +94,27 @@ protected:
     void DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write);
     void DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop);
     void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
-    void OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses);
     void OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api);
+    void OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses);
     void OnThread(uint thread_id, uint handle_id, uint sp);
-    void OnPush(uint thread_id, df_stackitem_c &the_bb);
+    void OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now = nullptr);
     void OnPop(uint thread_id, df_stackitem_c &the_bb);
+    void OnStart();
+    void OnFinish();
 
 public:
     LogRunner() {}
     static LogRunner* instance();
-    void AddObserver(LogRunnerObserver *observer) {
-        observers_.push_back(observer);
-    }
+
+    // Contracts
+    virtual std::string GetPrefix() override;
+    virtual std::string GetExecutable() override;
+    virtual void RequestToStop() override;
+
+    void AddObserver(LogRunnerObserver *observer);
     void ListObservers();
     bool Open(std::string &filename);
-
+    void SetExecutable(std::string exename);
     void FinishThread(thread_info_c &thread_info);
 
     bool Step(map_thread_info_t::iterator &it_thread);
@@ -116,7 +124,6 @@ public:
     bool RunMT();
     static void ThreadRun(thread_info_c &thread_info);
     void PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data);
-    void RequestToStop();
 
     void ThreadWaitCritSec(thread_info_c &thread_info);
     void ThreadWaitEvent(thread_info_c &thread_info);
