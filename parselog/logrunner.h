@@ -125,6 +125,8 @@ public:
     static void ThreadRun(thread_info_c &thread_info);
     void PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data);
 
+    void DoCommand(int argc, const char* argv[]);
+
     void ThreadWaitCritSec(thread_info_c &thread_info);
     void ThreadWaitEvent(thread_info_c &thread_info);
     void ThreadWaitMutex(thread_info_c &thread_info);

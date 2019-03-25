@@ -29,6 +29,7 @@ public:
     virtual void OnPop(uint thread_id, df_stackitem_c &the_bb) {}
     virtual void OnStart() {}
     virtual void OnFinish() {}
+    virtual void OnCommand(int argc, const char* argv[]) {};
     virtual void RestoreState(std::vector<char> &data) {}
     virtual void SaveState(std::vector<char> &data) {}
 };

@@ -352,6 +352,8 @@ main(int argc, PCHAR* argv)
 
 			rx.history_add(input);
 			continue;
+        } else {
+            g_runner->DoCommand(ar_input.size(), ar_input.data());
         }
     }
     

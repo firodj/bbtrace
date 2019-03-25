@@ -1689,6 +1689,13 @@ LogRunner::OnFinish()
         observer->OnFinish();
 }
 
+void
+LogRunner::DoCommand(int argc, const char* argv[])
+{
+    for (auto &observer : observers_)
+        observer->OnCommand(argc, argv);
+}
+
 std::string
 LogRunner::GetPrefix()
 {
