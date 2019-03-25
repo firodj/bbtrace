@@ -24,11 +24,10 @@ write_bool(std::ostream &out, int b)
 }
 
 void
-write_str(std::ostream &out, std::string &str)
+write_str(std::ostream &out, std::string const &str)
 {
-    int sz;
-    if (str.size() > 255) str.resize(255);
-    sz = str.size();
+    int sz = str.size();
+    if (sz > 255) sz = 255;
     out.put((char)sz);
     out.write(str.c_str(), sz);
 }
@@ -90,7 +89,8 @@ read_match(std::istream &in, const char *signature)
 
 }
 
-void read_data(std::istream &in,char*data, uint sz)
+void
+read_data(std::istream &in,char*data, uint sz)
 {
     in.read(data, sz);
 }

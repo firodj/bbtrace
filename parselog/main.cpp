@@ -53,9 +53,8 @@ public:
 
     argh::parser cmdl;
 
-    Options(int argc, PCHAR* argv)
+    Options()
     {
-        cmdl.parse(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
     }
 
     void split_string(std::string s, std::vector<std::string>& ar) {
@@ -70,8 +69,10 @@ public:
         }
     }
 
-    bool process()
+    bool process(int argc, PCHAR* argv)
     {
+        cmdl.parse(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
+
         if (!(cmdl(1) >> filename)) {
             std::cerr << "Please provide .bin file" << std::endl;
             return false;
@@ -101,7 +102,9 @@ public:
 
         return true;
     }
-};  
+};
+
+Options g_options;
 
 void signal_handler(int signal)
 {
@@ -144,6 +147,54 @@ hook_completion(std::string const& context, int& contextLen, std::vector<std::st
 	return completions;
 }
 
+void
+load()
+{
+    uint sav_cnt = get_available_states(g_options.filename);
+    if (sav_cnt <= 1) return;
+
+    std::ostringstream oss;
+    oss << get_states_name(g_options.filename, sav_cnt-1) << ".symbols";
+
+    std::ifstream fsymb;
+    fsymb.open(oss.str(), std::ifstream::in | std::ifstream::binary);
+    std::cout << "Reading from " << oss.str() << std::endl;
+    g_runner->RestoreSymbols(fsymb);
+
+    oss.str("");
+    oss.clear();
+    oss << get_states_name(g_options.filename, sav_cnt-1);
+
+    std::ifstream frun;
+    frun.open(oss.str(), std::ifstream::in | std::ifstream::binary);
+    std::cout << "Reading from " << oss.str() << std::endl;
+    g_runner->RestoreState(frun);
+
+    //g_runner->Dump();
+}
+
+void
+save()
+{
+    uint sav_cnt = get_available_states(g_options.filename);
+    std::ostringstream oss;
+    oss << get_states_name(g_options.filename, sav_cnt) << ".symbols";
+
+    std::ofstream fsymb;
+    fsymb.open(oss.str(), std::ofstream::out | std::ofstream::binary);
+    std::cout << "Writing to " << oss.str() << std::endl;
+    g_runner->SaveSymbols(fsymb);
+
+    oss.str("");
+    oss.clear();
+    oss << get_states_name(g_options.filename, sav_cnt);
+
+    std::ofstream frun;
+    frun.open(oss.str(), std::ofstream::out | std::ofstream::binary);
+    std::cout << "Writing to " << oss.str() << std::endl;
+    g_runner->SaveState(frun);
+}
+
 int
 main(int argc, PCHAR* argv)
 {
@@ -151,7 +202,7 @@ main(int argc, PCHAR* argv)
 
 	// words to be completed
 	std::vector<std::string> suggests {
-		"run", "quit", "exit",
+		"run", "quit", "exit", "save", "load",
     };
 
     Replxx rx;
@@ -162,8 +213,7 @@ main(int argc, PCHAR* argv)
     assert(sizeof(mem_ref_t) == 16);
     assert(sizeof(buf_string_t) == 6*16);
 
-    Options options(argc, argv);
-    if (! options.process()) {
+    if (! g_options.process(argc, argv)) {
         AutoPause auto_pause;
         return 1;
     }
@@ -189,102 +239,69 @@ main(int argc, PCHAR* argv)
     g_runner = LogRunner::instance();
     g_runner->ListObservers();
 
-    if (g_runner->Open(options.filename)) {
-        if (options.opt_input_state) {
-            uint sav_cnt = get_available_states(options.filename);
-            if (sav_cnt > 1) {
-                std::ostringstream oss;
-                oss << get_states_name(options.filename, sav_cnt-1) << ".symbols";
+    if (! g_runner->Open(g_options.filename)) {
+        AutoPause auto_pause;
+        return 1;
+    }
 
-                std::ifstream fsymb;
-                fsymb.open(oss.str(), std::ifstream::in | std::ifstream::binary);
-                std::cout << "Reading from " << oss.str() << std::endl;
-                g_runner->RestoreSymbols(fsymb);
+    if (g_options.opt_input_state)
+        load();
 
-                oss.str("");
-                oss.clear();
-                oss << get_states_name(options.filename, sav_cnt-1);
+    for (auto name : g_options.opt_procnames)
+        g_runner->FilterApiCall(name);
 
-                std::ifstream frun;
-                frun.open(oss.str(), std::ifstream::in | std::ifstream::binary);
-                std::cout << "Reading from " << oss.str() << std::endl;
-                g_runner->RestoreState(frun);
+    // main repl loop
+    for (;;) {
+        char const* cinput{ nullptr };
 
-                //g_runner->Dump();
-            }
+        do {
+            cinput = rx.input(prompt);
+        } while ( ( cinput == nullptr ) && ( errno == EAGAIN ) );
+
+        if (cinput == nullptr) {
+            break;
         }
 
-        for (auto name : options.opt_procnames)
-            g_runner->FilterApiCall(name);
+        // change cinput into a std::string
+        // easier to manipulate
+        std::string input {cinput};
 
-        // main repl loop
-	    for (;;) {
-            char const* cinput{ nullptr };
-    
-            do {
-                cinput = rx.input(prompt);
-            } while ( ( cinput == nullptr ) && ( errno == EAGAIN ) );
+        if (input.empty()) {
+            // user hit enter on an empty line
 
-            if (cinput == nullptr) {
-                break;
-            }
+            continue;
 
-            // change cinput into a std::string
-            // easier to manipulate
-            std::string input {cinput};
+        } else if (input.compare(0, 4, "quit") == 0 || input.compare(0, 4, "exit") == 0) {
+            // exit the repl
 
-            if (input.empty()) {
-                // user hit enter on an empty line
+            break;
+        } else if (input.compare(0, 3, "run") == 0) {
+            auto start = std::chrono::system_clock::now();
+            if (g_options.opt_use_multithread)
+                g_runner->RunMT();
+            else
+                g_runner->Run();
+            auto end = std::chrono::system_clock::now();
 
-                continue;
+            gSignalStatus = 0;
 
-            } else if (input.compare(0, 4, "quit") == 0 || input.compare(0, 4, "exit") == 0) {
-                // exit the repl
+            auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end-start);
+            auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end-start-minutes);
+            std::time_t end_time = std::chrono::system_clock::to_time_t(end);
 
-                break;
-            } else if (input.compare(0, 3, "run") == 0) {
-                auto start = std::chrono::system_clock::now();
-                if (options.opt_use_multithread)
-                    g_runner->RunMT();
-                else
-                    g_runner->Run();
-                auto end = std::chrono::system_clock::now();
-
-                if (gSignalStatus) {
-                    uint sav_cnt = get_available_states(options.filename);
-                    std::ostringstream oss;
-                    oss << get_states_name(options.filename, sav_cnt) << ".symbols";
-
-                    std::ofstream fsymb;
-                    fsymb.open(oss.str(), std::ofstream::out | std::ofstream::binary);
-                    std::cout << "Writing to " << oss.str() << std::endl;
-                    g_runner->SaveSymbols(fsymb);
-
-                    oss.str("");
-                    oss.clear();
-                    oss << get_states_name(options.filename, sav_cnt);
-
-                    std::ofstream frun;
-                    frun.open(oss.str(), std::ofstream::out | std::ofstream::binary);
-                    std::cout << "Writing to " << oss.str() << std::endl;
-                    g_runner->SaveState(frun);
-
-                    gSignalStatus = 0;
-                }
-
-                std::cout << "+++" << std::endl;
-                auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end-start);
-                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end-start-minutes);
-
-                std::time_t end_time = std::chrono::system_clock::to_time_t(end);
-                std::cout << "finished at " << std::ctime(&end_time)
-                        << "elapsed time: " << minutes.count() << ":" << seconds.count() << "s" << std::endl;
-                    
-                std::cout << "===" << std::endl;
-                g_runner->Summary();
-            }
+            std::cout << "+++" << std::endl;
+            std::cout << "finished at " << std::ctime(&end_time)
+                    << "elapsed time: " << minutes.count() << ":" << seconds.count() << "s" << std::endl;
+                
+            std::cout << "===" << std::endl;
+            g_runner->Summary();
+        } else if (input.compare(0, 4, "save") == 0) {
+            save();
+        } else if (input.compare(0, 4, "load") == 0) {
+            load();
         }
     }
+    
 
     return 0;
 }

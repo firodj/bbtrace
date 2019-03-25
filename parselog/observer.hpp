@@ -2,7 +2,7 @@
 
 #define WITHOUT_DR
 #include "../src/datatypes.h"
-#include "threadinfo.hpp";
+#include "threadinfo.hpp"
 
 class LogRunner;
 class LogRunnerObserver {
