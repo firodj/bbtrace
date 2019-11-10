@@ -22,9 +22,20 @@ typedef struct {
     uint end;
     uint last;
     std::string name;
+    uint thread_id;
+    uint64_t ts;
 } block_t;
+
+typedef struct {
+    uint addr;
+    uint end;
+} region_t;
+
 typedef std::map<uint, block_t> blocks_t;
 typedef std::map<uint, std::string> symbols_t;
+
+typedef std::map<uint, region_t> regions_t;
+typedef std::map<uint, uint> map_uint_uint_t;
 
 class tree_t;
 
@@ -94,9 +105,9 @@ public:
     {
         tree_t *_parent = this;
 
-        for (;_parent;_parent=_parent->parent) 
+        for (;_parent;_parent=_parent->parent)
             if (_parent->depth == _depth) break;
-        
+
         return _parent;
     }
 };
@@ -120,7 +131,7 @@ public:
     void start_sub(block_t *block, uint depth)
     {
         last_tree = last_tree->get_child(block, depth);
-        
+
         if (last_tree->depth != depth) {
             std::ostringstream ss;
             ss << "mismatch depth in:" << depth << " tree:" << last_tree->depth;
@@ -163,6 +174,7 @@ typedef std::unordered_map<uint, app_pc_list_t> app_pc_map_t;
 class FlameGraph{
 private:
     blocks_t blocks_;
+    array_uint_t blocks_order_;
     symbols_t symbols_;
     histories_t histories_;
     array_uint_t histories_order_;
@@ -197,6 +209,7 @@ public:
     void AddBlock(block_t &block) {
         if (BlockExists(block.addr)) return;
         blocks_[block.addr] = block;
+        blocks_order_.push_back(block.addr);
 
         if (block.kind == block_t::APICALL) {
             symbols_[block.addr] = block.name;
@@ -340,13 +353,13 @@ public:
     void OutputTree(std::ostream *out, tree_t *tree, int level = 0) {
         pkt_tree_t pkt_tree;
 
-        pkt_tree.addr = 0; 
+        pkt_tree.addr = 0;
         pkt_tree.size = tree->size;
         std::string name;
 
         if (tree->start_block) {
             pkt_tree.addr = tree->start_block->addr;
-        
+
             if (tree->start_block->kind == block_t::APICALL) {
                 name = tree->start_block->name;
             }
@@ -488,21 +501,73 @@ public:
         }
     }
 
-    void
-    DumpBlocksCSV(std::string &csvname)
+    void DumpRegions() {
+        map_uint_uint_t ends;
+        regions_t regions;
+        for (auto k: blocks_order_)
+        {
+            block_t &block = blocks_[k];
+            if (block.kind == block_t::APICALL) continue;
+            bool is_added = false;
+            // try to append existing
+            {
+                auto it = ends.find(block.addr);
+                if (it != ends.end()) {
+                    region_t &region = regions[it->second];
+                    region.end = block.end;
+                    ends[region.end] = region.addr;
+                    ends.erase(it);
+                    is_added = true;
+                }
+            }
+            // try to prepend existing
+            {
+                auto it = regions.find(block.end);
+                if (it != regions.end()) {
+                    region_t &region = it->second;
+                    region.addr = block.addr;
+                    regions[region.addr] = region;
+                    regions.erase(it);
+                    ends[region.end] = region.addr;
+                    is_added = true;
+                }
+            }
+            if (!is_added) {
+                auto it = regions.find(block.addr);
+                if (it == regions.end()) {
+                    region_t region;
+                    region.addr = block.addr;
+                    region.end = block.end;
+                    regions[region.addr] = region;
+                    ends[region.end] = region.addr;
+                }
+            }
+        }
+
+        std::cout << std::hex << "--selected-range ";
+        for (auto it = regions.begin(); it != regions.end(); )
+        {
+            std::cout << "0x" << it->second.addr << "-0x" << it->second.end;
+            if (++it != regions.end()) std::cout << ",";
+        }
+        std::cout << std::endl;
+    }
+
+    void DumpBlocksCSV(std::string &csvname)
     {
         std::cout << "Dump CSV: " << csvname << " ..." << std::endl;
 
         std::ofstream outfile;
         outfile.open(csvname.c_str());
-        
-        outfile << "pc,kind,next,jump" << std::endl;
-        for (blocks_t::value_type kv : blocks_)
-        {
-            block_t &block = kv.second;
 
-            // std::cout << std::dec << thread_id << ",";
-            outfile << "0x" << std::hex << block.addr << ",";
+        outfile << "ts,tid,pc,kind,next,jump" << std::endl;
+        for (auto k: blocks_order_)
+        {
+            block_t &block = blocks_[k];
+
+            outfile << std::dec << block.ts << ",";
+            outfile << "0x" << std::hex << std::nouppercase << block.thread_id << ",";
+            outfile << "0x" << block.addr << ",";
             switch(block.kind) {
                 case block_t::BLOCK:
                     outfile << "BLOCK,"; break;

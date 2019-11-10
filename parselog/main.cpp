@@ -102,9 +102,9 @@ public:
 
         if (cmdl["-i"])
             opt_input_state = true;
-        
+
         cmdl("-z") >> exename;
-        
+
         std::string procnames;
         if (cmdl("-p") >> procnames) {
             split_string(procnames, opt_procnames);
@@ -226,7 +226,7 @@ main(int argc, PCHAR* argv)
 
 	// words to be completed
 	std::vector<std::string> suggests {
-		"run", "quit", "exit", "save", "load", "history", "clear"
+		"run", "quit", "exit", "save", "load", "history", "clear", "help"
     };
 
     Replxx rx;
@@ -324,7 +324,7 @@ main(int argc, PCHAR* argv)
             std::cout << "+++" << std::endl;
             std::cout << "finished at " << std::ctime(&end_time)
                     << "elapsed time: " << minutes.count() << ":" << seconds.count() << "s" << std::endl;
-                
+
             std::cout << "===" << std::endl;
             g_runner->Summary();
 
@@ -352,11 +352,19 @@ main(int argc, PCHAR* argv)
 
 			rx.history_add(input);
 			continue;
+        } else if (args[0] == "help") {
+            std::cout << "help      Show this help" << std::endl;
+            std::cout << "clear     Clear screen" << std::endl;
+            std::cout << "history   List command history" << std::endl;
+            std::cout << "load      Load state" << std::endl;
+            std::cout << "run       Run parse log" << std::endl;
+            std::cout << "save      Save state" << std::endl;
+            std::cout << "quit      Quit" << std::endl;
         } else {
             g_runner->DoCommand(ar_input.size(), ar_input.data());
         }
     }
-    
+
 	// save the history
 	rx.history_save(history_file);
 
