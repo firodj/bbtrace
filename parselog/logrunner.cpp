@@ -44,7 +44,7 @@ LogRunner::FinishThread(thread_info_c &thread_info)
     if (thread_info.within_bb) {
         DoEndBB(thread_info /* , bb mem read/write */);
     }
-    
+
     thread_info.finished = true;
 }
 
@@ -260,18 +260,23 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
     return true;
 }
 
-bool LogRunner::Run()
+bool LogRunner::Run(RunPhase phase)
 {
-    map_thread_info_t::iterator it_thread = info_threads_.end();
+    if (phase == PHASE_NONE || phase == PHASE_PRE) {
+        request_stop_ = false;
+        is_multithread_ = false;
 
-    request_stop_ = false;
-    is_multithread_ = false;
+        OnStart();
+    }
 
-    OnStart();
+    if (phase == PHASE_NONE) {
+        map_thread_info_t::iterator it_thread = info_threads_.end();
+        while (Step(it_thread)) ;
+    }
 
-    while (Step(it_thread)) ;
-
-    OnFinish();
+    if (phase == PHASE_NONE || phase == PHASE_POST) {
+        OnFinish();
+    }
 
     return true;
 }
@@ -329,8 +334,8 @@ bool LogRunner::RunMT()
                         info_threads_.erase(message.thread_id);
                     }
 
-                    if ( std::all_of(info_threads_.begin(), 
-                        info_threads_.end(), 
+                    if ( std::all_of(info_threads_.begin(),
+                        info_threads_.end(),
                         [](map_thread_info_t::value_type &v){
                             return v.second.the_thread == nullptr;
                         }) )
@@ -365,7 +370,7 @@ void LogRunner::ThreadRun(thread_info_c &thread_info)
     }
 
     std::string data;
-    
+
     thread_info.the_runner->PostMessage(thread_info.id, MSG_THREAD_FINISHED, data);
 }
 
@@ -676,7 +681,7 @@ LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync)
         p_wait_seqs = &critsec_seqs_;
     }
 
-    bool non_suspend = false;    
+    bool non_suspend = false;
     sync_sequence_t &ss = (*p_wait_seqs)[wait];
 
     {
@@ -722,7 +727,7 @@ LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync)
 
     resume_cv_.notify_all();
 }
- 
+
 void
 LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write)
 {
@@ -744,15 +749,15 @@ LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write)
     memaccess_cur.size = mem_rw.size;
     memaccess_cur.is_write = is_write;
     memaccess_cur.is_loop = false;
-    
+
 #if 0
     std::cout << std::dec << thread_info.id << "] 0x" << std::hex << bb << " | 0x" << mem_rw.pc;
     if (mem_rw.kind == KIND_WRITE) std::cout << " WRITE ";
     if (mem_rw.kind == KIND_READ) std::cout << " READ ";
-    
-    std::cout << "0x" << mem_rw.addr 
+
+    std::cout << "0x" << mem_rw.addr
         << " [" << std::dec << mem_rw.size << "]";
-    
+
     std::cout << std::endl;
 #endif
 }
@@ -762,7 +767,7 @@ LogRunner::DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop)
 {
     if (thread_info.memaccesses.size() == 0)
         throw std::runtime_error("loop for who? missing mem access for loop");
-    
+
     df_memaccess_c &memaccess_cur = thread_info.memaccesses.back();
     if (memaccess_cur.pc != mem_loop.pc)
         throw std::runtime_error("mismatch loop and mem access pc");
@@ -803,7 +808,7 @@ LogRunner::ThreadWaitCritSec(thread_info_c &thread_info)
         if (is_multithread_) {
             resume_cv_.wait(lk, [&]{ return ss.seq == thread_info.critsec_seq - 1 || thread_info.the_runner->request_stop_; });
             if (thread_info.the_runner->request_stop_) return;
-        } else 
+        } else
         {
             if (!(ss.seq == thread_info.critsec_seq - 1)) return;
         }
@@ -1038,7 +1043,7 @@ LogRunner::Summary()
             std::cout << std::endl;
         }
     }
-    
+
     uint bb_counts = 0;
     uint64 max_ts = 0;
     for (auto &it: stats_threads_) {
@@ -1271,7 +1276,7 @@ thread_info_c::SaveState(std::ostream &out)
     if (pending_state) {
         write_data(out, (char*)&pending_bb, 16);
     }
-    
+
     last_bb.SaveState(out);
 
     // memaccesses
@@ -1319,7 +1324,7 @@ thread_info_c::RestoreState(std::istream &in)
 
     // stacks
     stacks.clear();
-    
+
     for(int i = read_u32(in);   // stacks size
         i; i--) {
         stacks.push_back(df_stackitem_c());
@@ -1332,12 +1337,12 @@ thread_info_c::RestoreState(std::istream &in)
     if (pending_state) {
         read_data(in, (char*)&pending_bb, 16);
     }
-    
+
     last_bb.RestoreState(in);
 
     // memaccesses
     memaccesses.clear();
-    
+
     for(int i = read_u32(in);   // memaccesses size
         i; i--) {
         memaccesses.push_back(df_memaccess_c());
@@ -1446,7 +1451,7 @@ df_apicall_c::SaveState(std::ostream &out)
 void
 df_apicall_c::RestoreState(std::istream &in)
 {
-    if (!read_match(in, "call")) 
+    if (!read_match(in, "call"))
         throw std::runtime_error("mismatch marker 'call'");
 
     func = read_u32(in);
@@ -1716,7 +1721,7 @@ void
 LogRunner::SetExecutable(std::string exename)
 {
     std::ifstream f(exename);
-    if (f.good()) 
+    if (f.good())
         exename_ = exename;
     else {
         throw std::runtime_error("SetExecutable on not existent exename");

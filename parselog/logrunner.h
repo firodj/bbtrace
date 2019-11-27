@@ -34,7 +34,7 @@ struct sync_sequence_t {
 public:
     uint seq;
     uint64 ts;
-    
+
     sync_sequence_t(): seq(0), ts(0) {}
 };
 
@@ -103,6 +103,12 @@ protected:
     void OnFinish();
 
 public:
+    enum RunPhase {
+        PHASE_NONE = 0,
+        PHASE_PRE,
+        PHASE_POST
+    };
+
     LogRunner() {}
     static LogRunner* instance();
 
@@ -120,7 +126,7 @@ public:
     bool Step(map_thread_info_t::iterator &it_thread);
     bool ThreadStep(thread_info_c &thread_info);
 
-    bool Run();
+    bool Run(RunPhase phase = PHASE_NONE);
     bool RunMT();
     static void ThreadRun(thread_info_c &thread_info);
     void PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data);
@@ -161,4 +167,5 @@ public:
 
     std::mutex resume_mx_;
     std::condition_variable resume_cv_;
+    map_thread_info_t &info_threads() { return info_threads_; }
 };
