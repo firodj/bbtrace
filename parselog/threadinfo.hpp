@@ -74,6 +74,12 @@ class LogRunner;
 
 class thread_info_c {
 public:
+    enum pending_state_e {
+        PEND_NONE = 0,
+        PEND_AFTER_RET,
+        PEND_WANT_RET
+    };
+
     logparser_c logparser;
     bool running;
     bool finished;
@@ -83,7 +89,7 @@ public:
     df_stackitem_c last_bb;
     df_apicall_c *apicall_now;
     mem_ref_t pending_bb;
-    uint pending_state;
+    pending_state_e pending_state;
     uint hevent_wait;
     uint hevent_seq;
     uint hmutex_wait;
@@ -106,7 +112,7 @@ public:
         hmutex_wait(0),
         critsec_wait(0),
         apicall_now(nullptr),
-        pending_state(0),
+        pending_state(PEND_NONE),
         filepos(0),
         within_bb(0),
         id(0),
