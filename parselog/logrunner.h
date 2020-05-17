@@ -17,11 +17,11 @@ typedef std::map<uint, uint64> map_uint_uint64_t;
 typedef std::map<app_pc, std::string> map_app_pc_string_t;
 
 enum RunnerMessageType {
-    MSG_UNDEFINED = 0,
-    MSG_CREATE_THREAD,
-    MSG_RESUME_THREAD,
-    MSG_THREAD_FINISHED,
-    MSG_REQUEST_STOP
+    kMsgUndefined = 0,
+    kMsgCreateThread,
+    kMsgResumeThread,
+    kMsgThreadFinished,
+    kMsgRequestStop
 };
 
 struct runner_message_t {
@@ -104,9 +104,9 @@ protected:
 
 public:
     enum RunPhase {
-        PHASE_NONE = 0,
-        PHASE_PRE,
-        PHASE_POST
+        kPhaseNone = 0,
+        kPhasePre,
+        kPhasePost
     };
 
     LogRunner() {}
@@ -126,7 +126,7 @@ public:
     bool Step(map_thread_info_t::iterator &it_thread);
     bool ThreadStep(thread_info_c &thread_info);
 
-    bool Run(RunPhase phase = PHASE_NONE);
+    bool Run(RunPhase phase = kPhaseNone);
     bool RunMT();
     static void ThreadRun(thread_info_c &thread_info);
     void PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data);

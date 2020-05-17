@@ -254,19 +254,19 @@ LogRunner::ThreadStep(thread_info_c &thread_info)
 
 bool LogRunner::Run(RunPhase phase)
 {
-    if (phase == PHASE_NONE || phase == PHASE_PRE) {
+    if (phase == kPhaseNone || phase == kPhasePre) {
         request_stop_ = false;
         is_multithread_ = false;
 
         OnStart();
     }
 
-    if (phase == PHASE_NONE) {
+    if (phase == kPhaseNone) {
         map_thread_info_t::iterator it_thread = info_threads_.end();
         while (Step(it_thread)) ;
     }
 
-    if (phase == PHASE_NONE || phase == PHASE_POST) {
+    if (phase == kPhaseNone || phase == kPhasePost) {
         OnFinish();
     }
 
@@ -298,7 +298,7 @@ bool LogRunner::RunMT()
         while (!messages_.empty()) {
             runner_message_t &message = messages_.front();
             switch (message.msg_type) {
-                case MSG_CREATE_THREAD: {
+                case kMsgCreateThread: {
                     df_apicall_c apicall_ret;
                     std::istringstream is_data(message.data);
                     apicall_ret.RestoreState( is_data );
@@ -306,7 +306,7 @@ bool LogRunner::RunMT()
                     OnCreateThread(apicall_ret, ts);
                     }
                     break;
-                case MSG_RESUME_THREAD: {
+                case kMsgResumeThread: {
                     df_apicall_c apicall_ret;
                     std::istringstream is_data(message.data);
                     apicall_ret.RestoreState( is_data );
@@ -314,7 +314,7 @@ bool LogRunner::RunMT()
                     OnResumeThread(apicall_ret, ts);
                     }
                     break;
-                case MSG_THREAD_FINISHED: {
+                case kMsgThreadFinished: {
                     thread_info_c &thread_info = info_threads_[message.thread_id];
                     std::cout << message.thread_id << "] wait thread exit." << std::endl;
                     thread_info.the_thread->join();
@@ -334,7 +334,7 @@ bool LogRunner::RunMT()
                         finished = true;
                     }
                     break;
-                case MSG_REQUEST_STOP: {
+                case kMsgRequestStop: {
                         request_stop_ = true;
                         resume_cv_.notify_all();
                     }
@@ -363,7 +363,7 @@ void LogRunner::ThreadRun(thread_info_c &thread_info)
 
     std::string data;
 
-    thread_info.the_runner->PostMessage(thread_info.id, MSG_THREAD_FINISHED, data);
+    thread_info.the_runner->PostMessage(thread_info.id, kMsgThreadFinished, data);
 }
 
 void
@@ -372,7 +372,7 @@ LogRunner::RequestToStop()
     std::string data;
 
     if (is_multithread_)
-        PostMessage(0, MSG_REQUEST_STOP, data);
+        PostMessage(0, kMsgRequestStop, data);
     else
         request_stop_ = true;
 }
@@ -906,13 +906,13 @@ LogRunner::ApiCallRet(thread_info_c &thread_info)
 
     if (apicall_ret.name == "CreateThread") {
         if (is_multithread_)
-            thread_info.the_runner->PostMessage(thread_info.id, MSG_CREATE_THREAD, data_with_ts);
+            thread_info.the_runner->PostMessage(thread_info.id, kMsgCreateThread, data_with_ts);
         else
             OnCreateThread(apicall_ret, thread_info.now_ts);
     }
     else if (apicall_ret.name == "ResumeThread") {
         if (is_multithread_)
-            thread_info.the_runner->PostMessage(thread_info.id, MSG_RESUME_THREAD, data_with_ts);
+            thread_info.the_runner->PostMessage(thread_info.id, kMsgResumeThread, data_with_ts);
         else
             OnResumeThread(apicall_ret, thread_info.now_ts);
     }
