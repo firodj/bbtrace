@@ -246,7 +246,7 @@ int main(int argc, PCHAR* argv) {
   // Install a signal handler
   std::signal(SIGINT, SignalHandler);
 
-  g_runner = LogRunner::instance();
+  g_runner = LogRunner::GetInstance();
   g_runner->ListObservers();
 
   if (! g_runner->Open(g_options.filename)) {

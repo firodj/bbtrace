@@ -128,4 +128,4 @@ public:
     void RestoreState(std::istream &in);
 };
 
-typedef std::map<uint, thread_info_c> map_thread_info_t;
+typedef std::map<uint, thread_info_c> MapOfThreadInfo;
