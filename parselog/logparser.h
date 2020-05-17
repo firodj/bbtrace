@@ -1,7 +1,7 @@
 #pragma once
 
 #include <fstream>
-#include "buffer.h"
+#include "parsebuffer.h"
 
 class LogParser {
 public:
@@ -16,5 +16,5 @@ public:
 private:
     std::string filename_;
     std::ifstream input_;
-    buffer_c buffer_;
+    ParseBuffer buffer_;
 };

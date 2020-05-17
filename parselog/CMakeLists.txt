@@ -17,7 +17,7 @@ include_directories(${BBTRACE_SOURCE_DIR}/src)
 #  ${CMAKE_SOURCE_DIR}/capstone/include
 
 add_library(parselog_core STATIC
-    buffer.cpp
+    parsebuffer.cpp
     logparser.cpp
     logrunner.cpp
     serializer.cpp

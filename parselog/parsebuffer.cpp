@@ -4,27 +4,27 @@
 #define WITHOUT_DR
 #include "datatypes.h"
 
-#include "buffer.h"
+#include "parsebuffer.h"
 
-buffer_c::buffer_c() {
+ParseBuffer::ParseBuffer() {
     allocated_ = 16 * 8192 * 128;
     data_ = new char[allocated_];
     reset();
 }
 
-buffer_c::~buffer_c() {
+ParseBuffer::~ParseBuffer() {
     delete[] data_;
 }
 
 void
-buffer_c::reset(uint64 inpos) {
+ParseBuffer::reset(uint64 inpos) {
     pos_ = 0;
     available_ = 0;
     inpos_ = inpos;
 }
 
 uint
-buffer_c::extract(std::istream &in) {
+ParseBuffer::extract(std::istream &in) {
     if (pos_ > 0) {
         uint new_pos = available_ - pos_;
         memcpy(&data_[0], &data_[pos_], new_pos);
@@ -39,7 +39,7 @@ buffer_c::extract(std::istream &in) {
 }
 
 uint
-buffer_c::peek() {
+ParseBuffer::peek() {
     uint kind;
     if (pos_ + sizeof(kind) > available_) return KIND_NONE;
     kind = *reinterpret_cast<uint*>(data());
@@ -47,7 +47,7 @@ buffer_c::peek() {
 }
 
 char*
-buffer_c::fetch() {
+ParseBuffer::fetch() {
     uint kind;
     if (pos_ + sizeof(kind) > available_) return NULL;
     kind = *reinterpret_cast<uint*>(data());
@@ -61,7 +61,7 @@ buffer_c::fetch() {
 }
 
 uint // static
-buffer_c::buf_size(uint kind) {
+ParseBuffer::buf_size(uint kind) {
     switch (kind) {
     case KIND_READ:
     case KIND_WRITE:
@@ -91,7 +91,7 @@ buffer_c::buf_size(uint kind) {
         return sizeof(buf_event_t);
     default: {
         std::ostringstream oss;
-        oss << "Unknown buffer_c::buf_size kind 0x" << std::hex << kind;
+        oss << "Unknown ParseBuffer::buf_size kind 0x" << std::hex << kind;
         if (kind) {
             oss << " KIND: " << std::string((char*)&kind, 4) << std::endl;
         }

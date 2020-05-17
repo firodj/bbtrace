@@ -1,6 +1,6 @@
 #pragma once
 
-class buffer_c {
+class ParseBuffer {
 private:
     char *data_;
     uint pos_;
@@ -8,8 +8,8 @@ private:
     uint available_;
     uint64 inpos_;
 public:
-    buffer_c();
-    ~buffer_c();
+    ParseBuffer();
+    ~ParseBuffer();
 
     void reset(uint64 inpos = 0);
     uint extract(std::istream &in);
