@@ -5,25 +5,15 @@ public:
   ParseBuffer();
   ~ParseBuffer();
 
-  void reset(uint64 inpos = 0);
-  uint extract(std::istream &in);
+  void Reset(uint64 inpos = 0);
+  size_t Extract(std::istream &in);
+  kind_t Peek();
+  char* Fetch();
+  static size_t KindSize(uint kind);
 
-  char *data() {
-    return &data_[pos_];
-  }
-
-  const uint length() {
-    return allocated() - pos_;
-  }
-
-  const uint allocated() {
-    return allocated_;
-  }
-
-  uint peek();
-  char* fetch();
-
-  static uint buf_size(uint kind);
+  char *data() { return &data_[pos_]; }
+  const uint length() { return allocated() - pos_; }
+  const uint allocated() { return allocated_; }
   uint64 inpos() { return inpos_; };
 
 private:

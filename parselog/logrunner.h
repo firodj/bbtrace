@@ -45,9 +45,7 @@ public:
 
   ThreadStats(): bb_counts(0), ts(0) {}
 
-  void
-  Apply(ThreadInfo &thread_info)
-  {
+  void Apply(ThreadInfo &thread_info) {
     bb_counts = thread_info.bb_count;
     ts = thread_info.now_ts;
   }
@@ -59,8 +57,7 @@ typedef std::map<uint, ThreadStats> ThreadStatsMap;
 
 class LogRunnerObserver;
 
-class LogRunner: public LogRunnerInterface
-{
+class LogRunner: public LogRunnerInterface {
 public:
   enum RunPhases {
     kPhaseNone = 0,
@@ -97,8 +94,7 @@ public:
   void ThreadWaitMutex(ThreadInfo &thread_info);
   void ThreadWaitRunning(ThreadInfo &thread_info);
 
-  void CheckPending(ThreadInfo &thread_info)
-  {
+  void CheckPending(ThreadInfo &thread_info) {
     ThreadWaitCritSec(thread_info);
     ThreadWaitEvent(thread_info);
     ThreadWaitMutex(thread_info);
@@ -112,8 +108,7 @@ public:
 
   void Summary();
 
-  void FilterApiCall(std::string &name)
-  {
+  void FilterApiCall(std::string &name) {
     filter_apicall_names_.push_back(name);
   }
 

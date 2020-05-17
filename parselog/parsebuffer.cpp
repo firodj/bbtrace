@@ -9,49 +9,45 @@
 ParseBuffer::ParseBuffer() {
   allocated_ = 16 * 8192 * 128;
   data_ = new char[allocated_];
-  reset();
+  Reset();
 }
 
 ParseBuffer::~ParseBuffer() {
   delete[] data_;
 }
 
-void
-ParseBuffer::reset(uint64 inpos) {
+void ParseBuffer::Reset(uint64 inpos) {
   pos_ = 0;
   available_ = 0;
   inpos_ = inpos;
 }
 
-uint
-ParseBuffer::extract(std::istream &in) {
+size_t ParseBuffer::Extract(std::istream &in) {
   if (pos_ > 0) {
     uint new_pos = available_ - pos_;
     memcpy(&data_[0], &data_[pos_], new_pos);
     pos_ = new_pos;
   }
   in.read(&data_[pos_], allocated_ - pos_);
-  uint bytes = in.gcount();
+  size_t bytes = in.gcount();
   available_ = pos_ + bytes;
   pos_ = 0;
 
   return bytes;
 }
 
-uint
-ParseBuffer::peek() {
-  uint kind;
+kind_t ParseBuffer::Peek() {
+  kind_t kind;
   if (pos_ + sizeof(kind) > available_) return KIND_NONE;
-  kind = *reinterpret_cast<uint*>(data());
+  kind = *reinterpret_cast<kind_t*>(data());
   return kind;
 }
 
-char*
-ParseBuffer::fetch() {
-  uint kind;
+char* ParseBuffer::Fetch() {
+  kind_t kind;
   if (pos_ + sizeof(kind) > available_) return NULL;
-  kind = *reinterpret_cast<uint*>(data());
-  uint size = buf_size(kind);
+  kind = *reinterpret_cast<kind_t*>(data());
+  size_t size = KindSize(kind);
   if (size == 0) return NULL;
   if (pos_ + size > available_) return NULL;
   char *buf_item = data();
@@ -60,8 +56,8 @@ ParseBuffer::fetch() {
   return buf_item;
 }
 
-uint // static
-ParseBuffer::buf_size(uint kind) {
+// static
+size_t ParseBuffer::KindSize(kind_t kind) {
   switch (kind) {
   case KIND_READ:
   case KIND_WRITE:
@@ -91,7 +87,7 @@ ParseBuffer::buf_size(uint kind) {
     return sizeof(buf_event_t);
   default: {
     std::ostringstream oss;
-    oss << "Unknown ParseBuffer::buf_size kind 0x" << std::hex << kind;
+    oss << "Unknown ParseBuffer::KindSize for kind 0x" << std::hex << kind;
     if (kind) {
       oss << " KIND: " << std::string((char*)&kind, 4) << std::endl;
     }

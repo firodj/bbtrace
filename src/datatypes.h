@@ -39,6 +39,8 @@
 #define SYNC_EVENT 0x746E7645 // 'Evnt'
 #define SYNC_CRITSEC 0x74697243
 
+typedef uint32_t kind_t;
+
 enum {
     LINK_JMP = 0,
     LINK_CALL,

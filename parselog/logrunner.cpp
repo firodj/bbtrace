@@ -953,6 +953,7 @@ void LogRunner::OnResumeThread(DataFlowApiCall &apicall, uint64 ts) {
     std::cout << "thread resuming (" << ts << ")" << std::endl;
   }
 }
+
 void LogRunner::Summary() {
   // Summary
   for (auto &it : info_threads_) {
