@@ -9,66 +9,66 @@
 class Printer: public LogRunnerObserver
 {
 private:
-    uint show_options_;
+  uint show_options_;
 
 public:
-    Printer(): LogRunnerObserver() {
-        show_options_ = 0;
+  Printer(): LogRunnerObserver() {
+    show_options_ = 0;
+  }
+
+  std::string GetName() override { return "Printer"; }
+
+  void
+  OnThread(uint thread_id, uint handle_id, uint sp) override
+  {
+    std::cout << std::dec << thread_id << "] ";
+    std::cout << "Thread ID:" << std::dec << handle_id
+      << " SP:0x" << std::hex << sp
+      << std::endl;
+  }
+
+  void
+  OnBB(uint thread_id, DataFlowStackItem &last_bb, DataFlowMemAccesses &memaccesses) override
+  {
+    if (show_options_ & LR_SHOW_BB) {
+      std::cout << std::dec << thread_id << "] ";
+      last_bb.Dump();
     }
 
-    std::string GetName() override { return "Printer"; }
-
-    void
-    OnThread(uint thread_id, uint handle_id, uint sp) override
-    {
-        std::cout << std::dec << thread_id << "] ";
-        std::cout << "Thread ID:" << std::dec << handle_id
-            << " SP:0x" << std::hex << sp
-            << std::endl;
+    if (show_options_ & LR_SHOW_MEM) {
+      for (auto &memaccess: memaccesses)
+        memaccess.Dump(1);
     }
+  }
 
-    void
-    OnBB(uint thread_id, DataFlowStackItem &last_bb, DataFlowMemAccesses &memaccesses) override
-    {
-        if (show_options_ & LR_SHOW_BB) {
-            std::cout << std::dec << thread_id << "] ";
-            last_bb.Dump();
-        }
+  void
+  OnApiCall(uint thread_id, DataFlowApiCall &apicall_ret) override
+  {
+    bool verbose = show_options_ & LR_SHOW_LIBCALL;
 
-        if (show_options_ & LR_SHOW_MEM) {
-            for (auto &memaccess: memaccesses)
-                memaccess.Dump(1);
-        }
+    // if (!verbose)
+    // for (auto filter_addr : filter_apicall_addrs_) {
+    //     if (filter_addr == apicall_ret.func) {
+    //         verbose = true; break;
+    //     }
+    // }
+    if (verbose) {
+      std::cout << std::dec << thread_id << "] ";
+      apicall_ret.Dump();
     }
+  }
 
-    void
-    OnApiCall(uint thread_id, DataFlowApiCall &apicall_ret) override
-    {
-        bool verbose = show_options_ & LR_SHOW_LIBCALL;
+  void
+  OnApiUntracked(uint thread_id, DataFlowStackItem &bb_untracked_api) override
+  {
+    bool verbose = show_options_ & LR_SHOW_LIBCALL;
 
-        // if (!verbose)
-        // for (auto filter_addr : filter_apicall_addrs_) {
-        //     if (filter_addr == apicall_ret.func) {
-        //         verbose = true; break;
-        //     }
-        // }
-        if (verbose) {
-            std::cout << std::dec << thread_id << "] ";
-            apicall_ret.Dump();
-        }
+    if (verbose) {
+      std::cout << std::dec << thread_id << "] Untracked api by bb:0x" << std::hex << bb_untracked_api.pc
+        << " ts:" << std::dec << bb_untracked_api.ts
+        << std::endl;
     }
-
-    void
-    OnApiUntracked(uint thread_id, DataFlowStackItem &bb_untracked_api) override
-    {
-        bool verbose = show_options_ & LR_SHOW_LIBCALL;
-
-        if (verbose) {
-            std::cout << std::dec << thread_id << "] Untracked api by bb:0x" << std::hex << bb_untracked_api.pc
-                << " ts:" << std::dec << bb_untracked_api.ts
-                << std::endl;
-        }
-    }
+  }
 };
 
 Printer observer = Printer();

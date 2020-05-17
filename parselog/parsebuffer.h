@@ -2,34 +2,34 @@
 
 class ParseBuffer {
 public:
-    ParseBuffer();
-    ~ParseBuffer();
+  ParseBuffer();
+  ~ParseBuffer();
 
-    void reset(uint64 inpos = 0);
-    uint extract(std::istream &in);
+  void reset(uint64 inpos = 0);
+  uint extract(std::istream &in);
 
-    char *data() {
-        return &data_[pos_];
-    }
+  char *data() {
+    return &data_[pos_];
+  }
 
-    const uint length() {
-        return allocated() - pos_;
-    }
+  const uint length() {
+    return allocated() - pos_;
+  }
 
-    const uint allocated() {
-        return allocated_;
-    }
+  const uint allocated() {
+    return allocated_;
+  }
 
-    uint peek();
-    char* fetch();
+  uint peek();
+  char* fetch();
 
-    static uint buf_size(uint kind);
-    uint64 inpos() { return inpos_; };
+  static uint buf_size(uint kind);
+  uint64 inpos() { return inpos_; };
 
 private:
-    char *data_;
-    uint pos_;
-    uint allocated_;
-    uint available_;
-    uint64 inpos_;
+  char *data_;
+  uint pos_;
+  uint allocated_;
+  uint available_;
+  uint64 inpos_;
 };
