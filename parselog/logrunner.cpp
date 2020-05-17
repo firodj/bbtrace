@@ -113,9 +113,9 @@ bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
     }
 
     char *item;
-    if (thread_info.pending_state == ThreadInfo::PEND_AFTER_RET) {
+    if (thread_info.pending_state == ThreadInfo::kPendAfterRet) {
       item = (char*)&thread_info.pending_bb;
-      thread_info.pending_state = ThreadInfo::PEND_NONE;
+      thread_info.pending_state = ThreadInfo::kPendNone;
     } else {
       // Consume kind
       item = thread_info.logparser.Fetch();
@@ -161,7 +161,7 @@ bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
 #endif
         if (thread_info.apicall_now && thread_info.apicall_now->ret_addr == buf_bb->pc) {
           thread_info.pending_bb = *buf_bb;
-          thread_info.pending_state = ThreadInfo::PEND_WANT_RET;
+          thread_info.pending_state = ThreadInfo::kPendWantRet;
           continue;
         } else {
           DoKindBB(thread_info, *(mem_ref_t*)item);
@@ -202,8 +202,8 @@ bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
         break;
       case KIND_LIB_RET:
         DoKindLibRet(thread_info, *(buf_lib_ret_t*)item);
-        if (thread_info.pending_state == ThreadInfo::PEND_WANT_RET) {
-          thread_info.pending_state = ThreadInfo::PEND_AFTER_RET;
+        if (thread_info.pending_state == ThreadInfo::kPendWantRet) {
+          thread_info.pending_state = ThreadInfo::kPendAfterRet;
           thread_info.last_kind = kind;
           continue;
         }
@@ -245,7 +245,7 @@ bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
   return true;
 }
 
-bool LogRunner::Run(RunPhase phase) {
+bool LogRunner::Run(RunPhases phase) {
   if (phase == kPhaseNone || phase == kPhasePre) {
     request_stop_ = false;
     is_multithread_ = false;
@@ -699,7 +699,7 @@ void LogRunner::DoMemRW(ThreadInfo &thread_info, mem_ref_t &mem_rw, bool is_writ
 
   if (! thread_info.within_bb) {
     // std::cout << "pending: " << thread_info.pending_state << " bb: 0x" << std::hex << thread_info.pending_bb.pc << std::endl;
-    if (thread_info.pending_state == ThreadInfo::PEND_WANT_RET &&
+    if (thread_info.pending_state == ThreadInfo::kPendWantRet &&
       thread_info.pending_bb.kind == KIND_BB)
       bb = thread_info.pending_bb.pc;
     else
@@ -1202,7 +1202,7 @@ void ThreadInfo::SaveState(std::ostream &out) {
   // pending state
   write_u32(out, pending_state);
 
-  if (pending_state != PEND_NONE) {
+  if (pending_state != kPendNone) {
     write_data(out, (char*)&pending_bb, 16);
   }
 
@@ -1259,9 +1259,9 @@ void ThreadInfo::RestoreState(std::istream &in) {
     stackitem_cur->RestoreState(in);
   }
 
-  pending_state = (pending_state_e)read_u32(in);
+  pending_state = (PendingStates)read_u32(in);
 
-  if (pending_state != PEND_NONE) {
+  if (pending_state != kPendNone) {
     read_data(in, (char*)&pending_bb, 16);
   }
 
@@ -1322,15 +1322,15 @@ void ThreadInfo::Dump(int indent) {
 
   std::cout << _tab << "pending_state: ";
   switch (pending_state) {
-    case PEND_NONE: std::cout << "PEND_NONE"; break;
-    case PEND_WANT_RET: std::cout << "PEND_WANT_RET"; break;
-    case PEND_AFTER_RET: std::cout <<  "PEND_AFTER_RET"; break;
+    case kPendNone: std::cout << "kPendNone"; break;
+    case kPendWantRet: std::cout << "kPendWantRet"; break;
+    case kPendAfterRet: std::cout <<  "kPendAfterRet"; break;
     default:
       std::cout << "(" << pending_state << ")";
   }
   std::cout << std::endl;
 
-  if (pending_state != PEND_NONE) {
+  if (pending_state != kPendNone) {
     std::cout << _tab << "  pending_bb.kind:0x" << std::hex << pending_bb.kind;
     if (pending_bb.kind)
       std::cout << " '" << std::string((char*)&pending_bb.kind, 4) << "' ";

@@ -62,7 +62,7 @@ class LogRunnerObserver;
 class LogRunner: public LogRunnerInterface
 {
 public:
-  enum RunPhase {
+  enum RunPhases {
     kPhaseNone = 0,
     kPhasePre,
     kPhasePost
@@ -85,7 +85,7 @@ public:
   bool Step(ThreadInfoMap::iterator &it_thread);
   bool ThreadStep(ThreadInfo &thread_info);
 
-  bool Run(RunPhase phase = kPhaseNone);
+  bool Run(RunPhases phase = kPhaseNone);
   bool RunMT();
   static void ThreadRun(ThreadInfo &thread_info);
   void PostMessage(uint thread_id, RunnerMessageType msg_type, std::string &data);

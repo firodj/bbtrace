@@ -1,12 +1,6 @@
 #pragma once
 
 class ParseBuffer {
-private:
-    char *data_;
-    uint pos_;
-    uint allocated_;
-    uint available_;
-    uint64 inpos_;
 public:
     ParseBuffer();
     ~ParseBuffer();
@@ -31,4 +25,11 @@ public:
 
     static uint buf_size(uint kind);
     uint64 inpos() { return inpos_; };
+
+private:
+    char *data_;
+    uint pos_;
+    uint allocated_;
+    uint available_;
+    uint64 inpos_;
 };

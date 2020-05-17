@@ -14,9 +14,6 @@ public:
 };
 
 class LogRunnerObserver {
-protected:
-    LogRunnerInterface *logrunner_;
-
 public:
     LogRunnerObserver();
 
@@ -32,4 +29,7 @@ public:
     virtual void OnCommand(int argc, const char* argv[]) {};
     virtual void RestoreState(std::vector<char> &data) {}
     virtual void SaveState(std::vector<char> &data) {}
+
+protected:
+    LogRunnerInterface *logrunner_;
 };

@@ -74,10 +74,10 @@ class LogRunner;
 
 class ThreadInfo {
 public:
-    enum pending_state_e {
-        PEND_NONE = 0,
-        PEND_AFTER_RET,
-        PEND_WANT_RET
+    enum PendingStates {
+        kPendNone = 0,
+        kPendAfterRet,
+        kPendWantRet
     };
 
     LogParser logparser;
@@ -89,7 +89,7 @@ public:
     DataFlowStackItem last_bb;
     DataFlowApiCall *apicall_now;
     mem_ref_t pending_bb;
-    pending_state_e pending_state;
+    PendingStates pending_state;
     uint hevent_wait;
     uint hevent_seq;
     uint hmutex_wait;
@@ -112,7 +112,7 @@ public:
         hmutex_wait(0),
         critsec_wait(0),
         apicall_now(nullptr),
-        pending_state(PEND_NONE),
+        pending_state(kPendNone),
         filepos(0),
         within_bb(0),
         id(0),
