@@ -6,7 +6,7 @@
 #include <map>
 #include "logparser.h"
 
-class df_apicall_c {
+struct DataFlowApiCall {
 public:
     app_pc func;
     std::string name;
@@ -17,14 +17,14 @@ public:
     std::vector<std::string> retstrings;
     uint64 ts;
     int s_depth;
-    df_apicall_c():
+    DataFlowApiCall():
         func(0), ret_addr(0), ts(0) {}
     void Dump(int indent = 0);
     void SaveState(std::ostream &out);
     void RestoreState(std::istream &in);
 };
 
-class df_stackitem_c {
+struct DataFlowStackItem {
 public:
     uint kind;
     app_pc pc;
@@ -39,14 +39,14 @@ public:
     };
     uint64 ts;
     int s_depth;
-    df_stackitem_c():
+    DataFlowStackItem():
         pc(0), ts(0), flags(0) {}
     void Dump(int indent = 0);
     void SaveState(std::ostream &out);
     void RestoreState(std::istream &in);
 };
 
-class df_memaccess_c {
+struct DataFlowMemAccess {
 public:
     app_pc pc;
     uint addr;
@@ -60,7 +60,7 @@ public:
     };
     uint loop_from;
     uint loop_to;
-    df_memaccess_c():
+    DataFlowMemAccess():
         pc(0), addr(0), size(0), is_write(false), is_loop(false) {}
 
     void Dump(int indent = 0);
@@ -68,7 +68,7 @@ public:
     void RestoreState(std::istream &in);
 };
 
-typedef std::vector<df_memaccess_c> vec_memaccess_t;
+typedef std::vector<DataFlowMemAccess> DataFlowMemAccesses;
 
 class LogRunner;
 
@@ -80,14 +80,14 @@ public:
         PEND_WANT_RET
     };
 
-    logparser_c logparser;
+    LogParser logparser;
     bool running;
     bool finished;
     uint last_kind;
-    std::vector<df_apicall_c> apicalls;
-    std::vector<df_stackitem_c> stacks;
-    df_stackitem_c last_bb;
-    df_apicall_c *apicall_now;
+    std::vector<DataFlowApiCall> apicalls;
+    std::vector<DataFlowStackItem> stacks;
+    DataFlowStackItem last_bb;
+    DataFlowApiCall *apicall_now;
     mem_ref_t pending_bb;
     pending_state_e pending_state;
     uint hevent_wait;
@@ -103,7 +103,7 @@ public:
     uint64 now_ts;
     std::unique_ptr<std::thread> the_thread;
     LogRunner* the_runner;
-    vec_memaccess_t memaccesses;
+    DataFlowMemAccesses memaccesses;
 
     ThreadInfo():
         running(false),

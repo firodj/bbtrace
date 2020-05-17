@@ -107,8 +107,8 @@ public:
 
   void ApiCallRet(ThreadInfo &thread_info);
 
-  void OnCreateThread(df_apicall_c &apicall, uint64 ts);
-  void OnResumeThread(df_apicall_c &apicall, uint64 ts);
+  void OnCreateThread(DataFlowApiCall &apicall, uint64 ts);
+  void OnResumeThread(DataFlowApiCall &apicall, uint64 ts);
 
   void Summary();
 
@@ -150,12 +150,12 @@ protected:
   void DoKindWndProc(ThreadInfo &thread_info, buf_event_t &buf_wndproc);
   void DoMemRW(ThreadInfo &thread_info, mem_ref_t &mem_rw, bool is_write);
   void DoMemLoop(ThreadInfo &thread_info, mem_ref_t &mem_loop);
-  void OnApiCall(uint thread_id, df_apicall_c &apicall_ret);
-  void OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api);
-  void OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses);
+  void OnApiCall(uint thread_id, DataFlowApiCall &apicall_ret);
+  void OnApiUntracked(uint thread_id, DataFlowStackItem &bb_untracked_api);
+  void OnBB(uint thread_id, DataFlowStackItem &last_bb, DataFlowMemAccesses &memaccesses);
   void OnThread(uint thread_id, uint handle_id, uint sp);
-  void OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now = nullptr);
-  void OnPop(uint thread_id, df_stackitem_c &the_bb);
+  void OnPush(uint thread_id, DataFlowStackItem &the_bb, DataFlowApiCall *apicall_now = nullptr);
+  void OnPop(uint thread_id, DataFlowStackItem &the_bb);
   void OnStart();
   void OnFinish();
 

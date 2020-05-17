@@ -21,12 +21,12 @@ public:
     LogRunnerObserver();
 
     virtual std::string GetName() { return "LogRunnerObserver"; }
-    virtual void OnApiCall(uint thread_id, df_apicall_c &apicall_ret) {}
-    virtual void OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses) {}
-    virtual void OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api) {}
+    virtual void OnApiCall(uint thread_id, DataFlowApiCall &apicall_ret) {}
+    virtual void OnBB(uint thread_id, DataFlowStackItem &last_bb, DataFlowMemAccesses &memaccesses) {}
+    virtual void OnApiUntracked(uint thread_id, DataFlowStackItem &bb_untracked_api) {}
     virtual void OnThread(uint thread_id, uint handle_id, uint sp) {}
-    virtual void OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now) {}
-    virtual void OnPop(uint thread_id, df_stackitem_c &the_bb) {}
+    virtual void OnPush(uint thread_id, DataFlowStackItem &the_bb, DataFlowApiCall *apicall_now) {}
+    virtual void OnPop(uint thread_id, DataFlowStackItem &the_bb) {}
     virtual void OnStart() {}
     virtual void OnFinish() {}
     virtual void OnCommand(int argc, const char* argv[]) {};

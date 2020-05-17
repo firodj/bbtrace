@@ -10,7 +10,7 @@ class Printer: public LogRunnerObserver
 {
 private:
     uint show_options_;
-    
+
 public:
     Printer(): LogRunnerObserver() {
         show_options_ = 0;
@@ -28,8 +28,8 @@ public:
     }
 
     void
-    OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses) override
-    { 
+    OnBB(uint thread_id, DataFlowStackItem &last_bb, DataFlowMemAccesses &memaccesses) override
+    {
         if (show_options_ & LR_SHOW_BB) {
             std::cout << std::dec << thread_id << "] ";
             last_bb.Dump();
@@ -42,7 +42,7 @@ public:
     }
 
     void
-    OnApiCall(uint thread_id, df_apicall_c &apicall_ret) override
+    OnApiCall(uint thread_id, DataFlowApiCall &apicall_ret) override
     {
         bool verbose = show_options_ & LR_SHOW_LIBCALL;
 
@@ -57,9 +57,9 @@ public:
             apicall_ret.Dump();
         }
     }
-    
+
     void
-    OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api) override
+    OnApiUntracked(uint thread_id, DataFlowStackItem &bb_untracked_api) override
     {
         bool verbose = show_options_ & LR_SHOW_LIBCALL;
 

@@ -3,18 +3,18 @@
 #include <fstream>
 #include "buffer.h"
 
-class logparser_c {
+class LogParser {
+public:
+    bool Open(const char* filename);
+    char* Fetch();
+    uint Peek();
+    void Seek(uint64 filepos);
+    uint64 Tell();
+
+    std::string filename() { return filename_; };
+
 private:
     std::string filename_;
     std::ifstream input_;
     buffer_c buffer_;
-
-public:
-    bool open(const char* filename);
-    char* fetch();
-    uint peek();
-    void seek(uint64 filepos);
-    uint64 tell();
-
-    std::string filename() { return filename_; };
 };

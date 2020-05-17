@@ -7,7 +7,7 @@
 #include "logparser.h"
 
 bool
-logparser_c::open(const char* filename)
+LogParser::Open(const char* filename)
 {
     filename_ = filename;
     input_.open(filename, std::ios_base::binary);
@@ -19,7 +19,7 @@ logparser_c::open(const char* filename)
 }
 
 char*
-logparser_c::fetch()
+LogParser::Fetch()
 {
     while (true) {
         char *item = buffer_.fetch();
@@ -30,7 +30,7 @@ logparser_c::fetch()
 }
 
 uint
-logparser_c::peek()
+LogParser::Peek()
 {
     while (true) {
         uint kind = buffer_.peek();
@@ -41,7 +41,7 @@ logparser_c::peek()
 }
 
 void
-logparser_c::seek(uint64 filepos)
+LogParser::Seek(uint64 filepos)
 {
     if (input_) {
         input_.seekg(filepos);
@@ -50,7 +50,7 @@ logparser_c::seek(uint64 filepos)
 }
 
 uint64_t
-logparser_c::tell()
+LogParser::Tell()
 {
     return buffer_.inpos();
 }

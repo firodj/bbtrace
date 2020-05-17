@@ -19,7 +19,7 @@ bool LogRunner::Open(std::string &filename) {
   filename_ = filename;
   const uint main_thread_id = 0;
 
-  if (info_threads_[main_thread_id].logparser.open(filename_.c_str())) {
+  if (info_threads_[main_thread_id].logparser.Open(filename_.c_str())) {
     std::cout << "Open:" << filename_ << std::endl;
     info_threads_[main_thread_id].running = true;
     info_threads_[main_thread_id].the_runner = this;
@@ -96,7 +96,7 @@ bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
 
     // Check Lib Ret first
     if (thread_info.apicall_now) {
-      kind = thread_info.logparser.peek();
+      kind = thread_info.logparser.Peek();
       if (thread_info.last_kind == KIND_LIB_RET && kind != KIND_ARGS && kind != KIND_STRING) {
         ApiCallRet(thread_info);
         break;
@@ -105,7 +105,7 @@ bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
 
     // Forward peek kind
     if (thread_info.within_bb) {
-      kind = thread_info.logparser.peek();
+      kind = thread_info.logparser.Peek();
       if (kind == KIND_BB || kind == KIND_LIB_CALL) {
         DoEndBB(thread_info);
         break;
@@ -118,8 +118,8 @@ bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
       thread_info.pending_state = ThreadInfo::PEND_NONE;
     } else {
       // Consume kind
-      item = thread_info.logparser.fetch();
-      thread_info.filepos = thread_info.logparser.tell();
+      item = thread_info.logparser.Fetch();
+      thread_info.filepos = thread_info.logparser.Tell();
 #if 0
       kind = *(uint*)item;
       std::cout << std::dec << thread_info.id << "] " << std::dec << thread_info.now_ts
@@ -290,7 +290,7 @@ bool LogRunner::RunMT() {
       RunnerMessage &message = messages_.front();
       switch (message.msg_type) {
         case kMsgCreateThread: {
-          df_apicall_c apicall_ret;
+          DataFlowApiCall apicall_ret;
           std::istringstream is_data(message.data);
           apicall_ret.RestoreState( is_data );
           uint64 ts = read_u64(is_data);
@@ -298,7 +298,7 @@ bool LogRunner::RunMT() {
           }
           break;
         case kMsgResumeThread: {
-          df_apicall_c apicall_ret;
+          DataFlowApiCall apicall_ret;
           std::istringstream is_data(message.data);
           apicall_ret.RestoreState( is_data );
           uint64 ts = read_u64(is_data);
@@ -387,19 +387,19 @@ void LogRunner::DoKindBB(ThreadInfo &thread_info, mem_ref_t &buf_bb) {
   }
 #endif
   // fixes stacks for bb with called (usually) to untracked api
-  df_stackitem_c bb_untracked_api;
+  DataFlowStackItem bb_untracked_api;
 
   if (thread_info.last_bb.link == LINK_CALL) {
     bb_is_sub = true;
     size_t i = thread_info.stacks.size();
     if (i) {
-      df_stackitem_c& last_item = thread_info.stacks[i-1];
+      DataFlowStackItem& last_item = thread_info.stacks[i-1];
       if (last_item.kind == KIND_BB && last_item.next == thread_info.within_bb) {
         if (thread_info.last_kind == KIND_BB)
           bb_untracked_api = last_item;
 
         while (thread_info.stacks.size() > i-1) {
-          df_stackitem_c& item = thread_info.stacks.back();
+          DataFlowStackItem& item = thread_info.stacks.back();
           item.ts = thread_info.now_ts;
           OnPop(thread_info.id, item);
           thread_info.stacks.pop_back();
@@ -415,10 +415,10 @@ void LogRunner::DoKindBB(ThreadInfo &thread_info, mem_ref_t &buf_bb) {
   if (thread_info.last_bb.link == LINK_RETURN) {
     size_t i;
     for (i = thread_info.stacks.size(); i > 0; --i) {
-      df_stackitem_c& item = thread_info.stacks[i-1];
+      DataFlowStackItem& item = thread_info.stacks[i-1];
       if (item.kind == KIND_BB && item.next == thread_info.within_bb) {
         while (thread_info.stacks.size() > i-1) {
-          df_stackitem_c& item = thread_info.stacks.back();
+          DataFlowStackItem& item = thread_info.stacks.back();
           item.ts = thread_info.now_ts;
           OnPop(thread_info.id, item);
           thread_info.stacks.pop_back();
@@ -441,7 +441,7 @@ void LogRunner::DoKindBB(ThreadInfo &thread_info, mem_ref_t &buf_bb) {
           << " stack size = " << std::dec << thread_info.stacks.size();
 
         if (thread_info.stacks.size()) {
-          df_stackitem_c& item = thread_info.stacks.back();
+          DataFlowStackItem& item = thread_info.stacks.back();
           std::cout << " TOP: 0x" << std::hex << item.pc;
           if (item.kind) {
             std::cout << " '" << std::string((char*)&item.kind, 4) << "'";
@@ -449,7 +449,7 @@ void LogRunner::DoKindBB(ThreadInfo &thread_info, mem_ref_t &buf_bb) {
         }
 
         if (thread_info.apicalls.size() ) {
-          df_apicall_c &libret_last = thread_info.apicalls.back();
+          DataFlowApiCall &libret_last = thread_info.apicalls.back();
           std::cout << " Lib:0x " << std::hex << libret_last.func;
           std::cout << " " << libret_last.name;
           std::cout << " Ret:0x " << std::hex << libret_last.ret_addr;
@@ -477,8 +477,8 @@ void LogRunner::DoKindBB(ThreadInfo &thread_info, mem_ref_t &buf_bb) {
   thread_info.last_bb.s_depth = thread_info.stacks.size();
 
   if (bb_link == LINK_CALL) {
-    thread_info.stacks.push_back(df_stackitem_c());
-    df_stackitem_c& item = thread_info.stacks.back();
+    thread_info.stacks.push_back(DataFlowStackItem());
+    DataFlowStackItem& item = thread_info.stacks.back();
     item = thread_info.last_bb;
   }
 
@@ -517,8 +517,8 @@ void LogRunner::DoKindLibCall(ThreadInfo &thread_info, buf_lib_call_t &buf_libca
   }
 
   int s_depth = thread_info.stacks.size();
-  thread_info.stacks.push_back(df_stackitem_c());
-  df_stackitem_c& item = thread_info.stacks.back();
+  thread_info.stacks.push_back(DataFlowStackItem());
+  DataFlowStackItem& item = thread_info.stacks.back();
 
   item.kind = KIND_LIB_CALL;
   item.pc   = buf_libcall.func;
@@ -529,7 +529,7 @@ void LogRunner::DoKindLibCall(ThreadInfo &thread_info, buf_lib_call_t &buf_libca
   item.ts   = thread_info.now_ts;
   item.s_depth = s_depth;
 
-  thread_info.apicalls.push_back(df_apicall_c());
+  thread_info.apicalls.push_back(DataFlowApiCall());
   thread_info.apicall_now = &thread_info.apicalls.back();
 
   thread_info.apicall_now->func = buf_libcall.func;
@@ -564,7 +564,7 @@ void LogRunner::DoKindLibRet(ThreadInfo &thread_info, buf_lib_ret_t &buf_libret)
     throw std::runtime_error ("Apicall stacks empty!");
   }
 
-  df_apicall_c &libret_last = thread_info.apicalls.back();
+  DataFlowApiCall &libret_last = thread_info.apicalls.back();
   if (libret_last.func != buf_libret.func &&
     libret_last.ret_addr != buf_libret.ret_addr) {
     std::cout << "Unmatch lib ret!" << std::endl;
@@ -573,10 +573,10 @@ void LogRunner::DoKindLibRet(ThreadInfo &thread_info, buf_lib_ret_t &buf_libret)
 
   size_t i;
   for (i = thread_info.stacks.size(); i > 0; --i) {
-    df_stackitem_c& item = thread_info.stacks[i-1];
+    DataFlowStackItem& item = thread_info.stacks[i-1];
     if (item.kind == KIND_LIB_CALL && item.next == buf_libret.ret_addr) {
       while (thread_info.stacks.size() > i-1) {
-        df_stackitem_c& item = thread_info.stacks.back();
+        DataFlowStackItem& item = thread_info.stacks.back();
         item.ts = thread_info.now_ts;
         OnPop(thread_info.id, item);
         thread_info.stacks.pop_back();
@@ -602,7 +602,7 @@ void LogRunner::DoKindLibRet(ThreadInfo &thread_info, buf_lib_ret_t &buf_libret)
 }
 
 void LogRunner::DoKindArgs(ThreadInfo &thread_info, buf_event_t &buf_args) {
-  df_apicall_c &libcall_now = thread_info.apicalls.back();
+  DataFlowApiCall &libcall_now = thread_info.apicalls.back();
 
   if (thread_info.last_kind == KIND_LIB_CALL) {
     for (int a=0; a<3; ++a) libcall_now.callargs.push_back((uint)buf_args.params[a]);
@@ -619,7 +619,7 @@ void LogRunner::DoKindString(ThreadInfo &thread_info, buf_string_t &buf_str) {
   const char* copyupto = std::find(buf_str.value, buf_str.value + sizeof(buf_str.value), 0);
   std::string value(buf_str.value, copyupto - buf_str.value);
 
-  df_apicall_c &libcall_now = thread_info.apicalls.back();
+  DataFlowApiCall &libcall_now = thread_info.apicalls.back();
 
   if (thread_info.last_kind == KIND_LIB_CALL) {
     libcall_now.callstrings.push_back(value);
@@ -706,8 +706,8 @@ void LogRunner::DoMemRW(ThreadInfo &thread_info, mem_ref_t &mem_rw, bool is_writ
       throw std::runtime_error("Whose bb access memory?");
   }
 
-  thread_info.memaccesses.push_back(df_memaccess_c());
-  df_memaccess_c &memaccess_cur = thread_info.memaccesses.back();
+  thread_info.memaccesses.push_back(DataFlowMemAccess());
+  DataFlowMemAccess &memaccess_cur = thread_info.memaccesses.back();
 
   memaccess_cur.pc = mem_rw.pc;
   memaccess_cur.addr = mem_rw.addr;
@@ -731,7 +731,7 @@ void LogRunner::DoMemLoop(ThreadInfo &thread_info, mem_ref_t &mem_loop) {
   if (thread_info.memaccesses.size() == 0)
     throw std::runtime_error("loop for who? missing mem access for loop");
 
-  df_memaccess_c &memaccess_cur = thread_info.memaccesses.back();
+  DataFlowMemAccess &memaccess_cur = thread_info.memaccesses.back();
   if (memaccess_cur.pc != mem_loop.pc)
     throw std::runtime_error("mismatch loop and mem access pc");
 
@@ -848,7 +848,7 @@ void LogRunner::PostMessage(uint thread_id, RunnerMessageType msg_type, std::str
 }
 
 void LogRunner::ApiCallRet(ThreadInfo &thread_info) {
-  df_apicall_c apicall_ret = *thread_info.apicall_now;
+  DataFlowApiCall apicall_ret = *thread_info.apicall_now;
   thread_info.apicalls.pop_back();
   thread_info.apicall_now = nullptr;
 
@@ -886,12 +886,12 @@ void LogRunner::DoEndBB(ThreadInfo &thread_info) {
   thread_info.within_bb = 0;
 
   if (thread_info.last_bb.link == LINK_CALL) {
-    df_stackitem_c& item = thread_info.stacks.back();
+    DataFlowStackItem& item = thread_info.stacks.back();
     OnPush(thread_info.id, item);
   }
 }
 
-void LogRunner::OnCreateThread(df_apicall_c &apicall, uint64 ts) {
+void LogRunner::OnCreateThread(DataFlowApiCall &apicall, uint64 ts) {
   uint new_thread_id = apicall.retargs[1];
   bool new_suspended = (apicall.callargs[3] & 0x4) == 0x4;
 
@@ -907,7 +907,7 @@ void LogRunner::OnCreateThread(df_apicall_c &apicall, uint64 ts) {
     thread_info.now_ts = ts;
     thread_info.the_runner = this;
 
-    if (! thread_info.logparser.open(oss.str().c_str())) {
+    if (! thread_info.logparser.Open(oss.str().c_str())) {
       std::cout << "Fail to open .bin: " << oss.str() << std::endl;
       thread_info.finished = true;
     } else {
@@ -938,7 +938,7 @@ void LogRunner::OnCreateThread(df_apicall_c &apicall, uint64 ts) {
   }
 }
 
-void LogRunner::OnResumeThread(df_apicall_c &apicall, uint64 ts) {
+void LogRunner::OnResumeThread(DataFlowApiCall &apicall, uint64 ts) {
   uint resume_thread_id = apicall.retargs[1];
   if (info_threads_.find(resume_thread_id) != info_threads_.end()) {
     {
@@ -1104,15 +1104,15 @@ void LogRunner::RestoreState(std::istream &in) {
     ThreadInfo &thread_info = info_threads_[first];
 
     if (first == 0) {
-      thread_info.logparser.open(filename_.c_str());
+      thread_info.logparser.Open(filename_.c_str());
     } else {
       std::ostringstream oss;
       oss << filename_ << "." << std::dec << first;
-      thread_info.logparser.open(oss.str().c_str());
+      thread_info.logparser.Open(oss.str().c_str());
     }
 
     thread_info.RestoreState(in);
-    thread_info.logparser.seek(thread_info.filepos);
+    thread_info.logparser.Seek(thread_info.filepos);
     thread_info.the_runner = this;
     thread_info.the_thread = nullptr;
   }
@@ -1183,7 +1183,7 @@ void ThreadInfo::SaveState(std::ostream &out) {
 
   int j = -1;
   for (uint i = 0; i < apicalls.size(); ++i) {
-    df_apicall_c &apicall_cur = apicalls[i];
+    DataFlowApiCall &apicall_cur = apicalls[i];
     apicall_cur.SaveState(out);
 
     if (apicall_now == &apicall_cur) j = i;
@@ -1195,7 +1195,7 @@ void ThreadInfo::SaveState(std::ostream &out) {
   write_u32(out, stacks.size());
 
   for (uint i = 0; i < stacks.size(); ++i) {
-    df_stackitem_c &stackitem_cur = stacks[i];
+    DataFlowStackItem &stackitem_cur = stacks[i];
     stackitem_cur.SaveState(out);
   }
 
@@ -1212,7 +1212,7 @@ void ThreadInfo::SaveState(std::ostream &out) {
   write_u32(out, memaccesses.size());
 
   for (uint i = 0; i < memaccesses.size(); ++i) {
-    df_memaccess_c &memaccess_cur = memaccesses[i];
+    DataFlowMemAccess &memaccess_cur = memaccesses[i];
     memaccess_cur.SaveState(out);
   }
 }
@@ -1241,7 +1241,7 @@ void ThreadInfo::RestoreState(std::istream &in) {
 
   for(int i = read_u32(in);   // apicalls size
     i; i--) {
-    apicalls.push_back(df_apicall_c());
+    apicalls.push_back(DataFlowApiCall());
     apicall_now = &apicalls.back();
     apicall_now->RestoreState(in);
   }
@@ -1254,8 +1254,8 @@ void ThreadInfo::RestoreState(std::istream &in) {
 
   for(int i = read_u32(in);   // stacks size
     i; i--) {
-    stacks.push_back(df_stackitem_c());
-    df_stackitem_c *stackitem_cur = &stacks.back();
+    stacks.push_back(DataFlowStackItem());
+    DataFlowStackItem *stackitem_cur = &stacks.back();
     stackitem_cur->RestoreState(in);
   }
 
@@ -1272,8 +1272,8 @@ void ThreadInfo::RestoreState(std::istream &in) {
 
   for(int i = read_u32(in);   // memaccesses size
     i; i--) {
-    memaccesses.push_back(df_memaccess_c());
-    df_memaccess_c *memaccess_cur = &memaccesses.back();
+    memaccesses.push_back(DataFlowMemAccess());
+    DataFlowMemAccess *memaccess_cur = &memaccesses.back();
     memaccess_cur->RestoreState(in);
   }
 }
@@ -1306,7 +1306,7 @@ void ThreadInfo::Dump(int indent) {
 
   int j = -1;
   for (uint i = 0; i < apicalls.size(); ++i) {
-    df_apicall_c &apicall_cur = apicalls[i];
+    DataFlowApiCall &apicall_cur = apicalls[i];
     std::cout <<  _tab << "  apicalls[" << i << "]: ";
     apicall_cur.Dump(indent + 2);
 
@@ -1315,7 +1315,7 @@ void ThreadInfo::Dump(int indent) {
   std::cout << _tab << "apicall_now: " << std::dec << j << std::endl;
 
   for (uint i = 0; i < stacks.size(); ++i) {
-    df_stackitem_c &stackitem_cur = stacks[i];
+    DataFlowStackItem &stackitem_cur = stacks[i];
     std::cout <<  _tab << "  stacks[" << i << "]: ";
     stackitem_cur.Dump(indent + 2);
   }
@@ -1340,13 +1340,13 @@ void ThreadInfo::Dump(int indent) {
   last_bb.Dump(indent + 2);
 
   for (uint i = 0; i < memaccesses.size(); ++i) {
-    df_memaccess_c &memaccess_cur = memaccesses[i];
+    DataFlowMemAccess &memaccess_cur = memaccesses[i];
     std::cout <<  _tab << "  memaccesses[" << i << "]: ";
     memaccess_cur.Dump(indent + 2);
   }
 }
 
-void df_apicall_c::SaveState(std::ostream &out) {
+void DataFlowApiCall::SaveState(std::ostream &out) {
   out << "call";
 
   write_u32(out, func);
@@ -1380,7 +1380,7 @@ void df_apicall_c::SaveState(std::ostream &out) {
   }
 }
 
-void df_apicall_c::RestoreState(std::istream &in) {
+void DataFlowApiCall::RestoreState(std::istream &in) {
   if (!read_match(in, "call"))
     throw std::runtime_error("mismatch marker 'call'");
 
@@ -1415,7 +1415,7 @@ void df_apicall_c::RestoreState(std::istream &in) {
   }
 }
 
-void df_apicall_c::Dump(int indent) {
+void DataFlowApiCall::Dump(int indent) {
   std::string _tab = std::string(indent, ' ');
 
   std::cout << _tab << "call " << name << "@0x" << std::hex << func << "(";
@@ -1438,7 +1438,7 @@ void df_apicall_c::Dump(int indent) {
   std::cout << std::endl;
 }
 
-void df_stackitem_c::Dump(int indent) {
+void DataFlowStackItem::Dump(int indent) {
   std::string _tab = std::string(indent, ' ');
 
   std::cout << _tab << "kind:";
@@ -1461,7 +1461,7 @@ void df_stackitem_c::Dump(int indent) {
   std::cout << std::endl;
 }
 
-void df_stackitem_c::SaveState(std::ostream &out) {
+void DataFlowStackItem::SaveState(std::ostream &out) {
   out << "stem";
 
   write_u32(out, kind);
@@ -1472,7 +1472,7 @@ void df_stackitem_c::SaveState(std::ostream &out) {
   write_u32(out, s_depth);
 }
 
-void df_stackitem_c::RestoreState(std::istream &in) {
+void DataFlowStackItem::RestoreState(std::istream &in) {
   if (!read_match(in, "stem"))
     throw std::runtime_error("mismatch marker 'stem'");
 
@@ -1484,7 +1484,7 @@ void df_stackitem_c::RestoreState(std::istream &in) {
   s_depth = read_u32(in);
 }
 
-void df_memaccess_c::Dump(int indent) {
+void DataFlowMemAccess::Dump(int indent) {
   std::string _tab = std::string(indent, ' ');
 
   std::cout << _tab;
@@ -1497,7 +1497,7 @@ void df_memaccess_c::Dump(int indent) {
   std::cout << std::endl;
 }
 
-void df_memaccess_c::SaveState(std::ostream &out) {
+void DataFlowMemAccess::SaveState(std::ostream &out) {
   out << "memo";
 
   write_u32(out, pc);
@@ -1511,7 +1511,7 @@ void df_memaccess_c::SaveState(std::ostream &out) {
   }
 }
 
-void df_memaccess_c::RestoreState(std::istream &in) {
+void DataFlowMemAccess::RestoreState(std::istream &in) {
   if (!read_match(in, "memo"))
     throw std::runtime_error("mismatch marker 'memo'");
 
@@ -1559,27 +1559,27 @@ void LogRunner::OnThread(uint thread_id, uint handle_id, uint sp) {
     observer->OnThread(thread_id, handle_id, sp);
 }
 
-void LogRunner::OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now) {
+void LogRunner::OnPush(uint thread_id, DataFlowStackItem &the_bb, DataFlowApiCall *apicall_now) {
   for (auto &observer : observers_)
     observer->OnPush(thread_id, the_bb, apicall_now);
 }
 
-void LogRunner::OnPop(uint thread_id, df_stackitem_c &the_bb) {
+void LogRunner::OnPop(uint thread_id, DataFlowStackItem &the_bb) {
   for (auto &observer : observers_)
     observer->OnPop(thread_id, the_bb);
 }
 
-void LogRunner::OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses) {
+void LogRunner::OnBB(uint thread_id, DataFlowStackItem &last_bb, DataFlowMemAccesses &memaccesses) {
   for (auto &observer : observers_)
     observer->OnBB(thread_id, last_bb, memaccesses);
 }
 
-void LogRunner::OnApiCall(uint thread_id, df_apicall_c &apicall_ret) {
+void LogRunner::OnApiCall(uint thread_id, DataFlowApiCall &apicall_ret) {
   for (auto &observer : observers_)
     observer->OnApiCall(thread_id, apicall_ret);
 }
 
-void LogRunner::OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api) {
+void LogRunner::OnApiUntracked(uint thread_id, DataFlowStackItem &bb_untracked_api) {
   for (auto &observer : observers_)
     observer->OnApiUntracked(thread_id, bb_untracked_api);
 }

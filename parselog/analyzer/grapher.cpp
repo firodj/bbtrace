@@ -10,7 +10,7 @@ FlameGraph g_flamegraph;
 class Grapher: public LogRunnerObserver
 {
     bool
-    assign_block(block_t &block, df_stackitem_c &last_bb)
+    assign_block(block_t &block, DataFlowStackItem &last_bb)
     {
         if (last_bb.kind == KIND_BB) {
             block.kind = block_t::BLOCK;
@@ -29,7 +29,7 @@ class Grapher: public LogRunnerObserver
     }
 
     bool
-    assign_apicall(block_t &block, df_apicall_c *apicall_now)
+    assign_apicall(block_t &block, DataFlowApiCall *apicall_now)
     {
         block.kind = block_t::APICALL;
         block.addr = apicall_now->func;
@@ -49,7 +49,7 @@ public:
     std::string GetName() override { return "Grapher"; }
 
     void
-    OnBB(uint thread_id, df_stackitem_c &last_bb, vec_memaccess_t &memaccesses) override
+    OnBB(uint thread_id, DataFlowStackItem &last_bb, DataFlowMemAccesses &memaccesses) override
     {
         // if (last_bb.ts > 10) verbose_ = true;
 
@@ -84,7 +84,7 @@ public:
     }
 
     void
-    OnApiCall(uint thread_id, df_apicall_c &apicall_ret) override
+    OnApiCall(uint thread_id, DataFlowApiCall &apicall_ret) override
     {
 #if 0
         std::cout << std::dec << thread_id << "] OnApiCall Return: ";
@@ -93,7 +93,7 @@ public:
     }
 
     void
-    OnApiUntracked(uint thread_id, df_stackitem_c &bb_untracked_api) override
+    OnApiUntracked(uint thread_id, DataFlowStackItem &bb_untracked_api) override
     {
 #if 0
         std::cout << std::dec << thread_id << "] Untracked API: ";
@@ -101,7 +101,7 @@ public:
 #endif
     }
 
-    void OnPush(uint thread_id, df_stackitem_c &the_bb, df_apicall_c *apicall_now) override
+    void OnPush(uint thread_id, DataFlowStackItem &the_bb, DataFlowApiCall *apicall_now) override
     {
         if (apicall_now) {
 #if 0
@@ -132,7 +132,7 @@ public:
         }
     }
 
-    void OnPop(uint thread_id, df_stackitem_c &the_bb) override
+    void OnPop(uint thread_id, DataFlowStackItem &the_bb) override
     {
         if (verbose_) {
             std::cout << std::dec << thread_id << "] On Pop: ";
