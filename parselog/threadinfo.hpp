@@ -72,7 +72,7 @@ typedef std::vector<df_memaccess_c> vec_memaccess_t;
 
 class LogRunner;
 
-class thread_info_c {
+class ThreadInfo {
 public:
     enum pending_state_e {
         PEND_NONE = 0,
@@ -105,7 +105,7 @@ public:
     LogRunner* the_runner;
     vec_memaccess_t memaccesses;
 
-    thread_info_c():
+    ThreadInfo():
         running(false),
         finished(false),
         hevent_wait(0),
@@ -128,4 +128,4 @@ public:
     void RestoreState(std::istream &in);
 };
 
-typedef std::map<uint, thread_info_c> MapOfThreadInfo;
+typedef std::map<uint, ThreadInfo> ThreadInfoMap;

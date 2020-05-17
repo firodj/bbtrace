@@ -32,7 +32,7 @@ bool LogRunner::Open(std::string &filename) {
   return true;
 }
 
-void LogRunner::FinishThread(thread_info_c &thread_info) {
+void LogRunner::FinishThread(ThreadInfo &thread_info) {
   while (! thread_info.apicalls.empty()) {
     thread_info.apicall_now = &thread_info.apicalls.back();
     ApiCallRet(thread_info);
@@ -45,7 +45,7 @@ void LogRunner::FinishThread(thread_info_c &thread_info) {
   thread_info.finished = true;
 }
 
-bool LogRunner::Step(MapOfThreadInfo::iterator &it_thread) {
+bool LogRunner::Step(ThreadInfoMap::iterator &it_thread) {
   uint inactive = 0;
   for(; inactive < info_threads_.size();
       inactive++, it_thread++) {
@@ -55,7 +55,7 @@ bool LogRunner::Step(MapOfThreadInfo::iterator &it_thread) {
       it_thread = info_threads_.begin();
     }
 
-    thread_info_c &thread_info = it_thread->second;
+    ThreadInfo &thread_info = it_thread->second;
 
     if (thread_info.finished)
       continue;
@@ -71,7 +71,7 @@ bool LogRunner::Step(MapOfThreadInfo::iterator &it_thread) {
   }
 
   uint thread_id = it_thread->first;
-  thread_info_c &thread_info = it_thread->second;
+  ThreadInfo &thread_info = it_thread->second;
   auto it_current = it_thread++;
 
   if (! ThreadStep(thread_info)) {
@@ -88,7 +88,7 @@ bool LogRunner::Step(MapOfThreadInfo::iterator &it_thread) {
  * return true when continue to process event.
  *        false when reach to end /finish.
  */
-bool LogRunner::ThreadStep(thread_info_c &thread_info) {
+bool LogRunner::ThreadStep(ThreadInfo &thread_info) {
   thread_info.now_ts++;
 
   while (thread_info.running) {
@@ -113,9 +113,9 @@ bool LogRunner::ThreadStep(thread_info_c &thread_info) {
     }
 
     char *item;
-    if (thread_info.pending_state == thread_info_c::PEND_AFTER_RET) {
+    if (thread_info.pending_state == ThreadInfo::PEND_AFTER_RET) {
       item = (char*)&thread_info.pending_bb;
-      thread_info.pending_state = thread_info_c::PEND_NONE;
+      thread_info.pending_state = ThreadInfo::PEND_NONE;
     } else {
       // Consume kind
       item = thread_info.logparser.fetch();
@@ -161,7 +161,7 @@ bool LogRunner::ThreadStep(thread_info_c &thread_info) {
 #endif
         if (thread_info.apicall_now && thread_info.apicall_now->ret_addr == buf_bb->pc) {
           thread_info.pending_bb = *buf_bb;
-          thread_info.pending_state = thread_info_c::PEND_WANT_RET;
+          thread_info.pending_state = ThreadInfo::PEND_WANT_RET;
           continue;
         } else {
           DoKindBB(thread_info, *(mem_ref_t*)item);
@@ -202,8 +202,8 @@ bool LogRunner::ThreadStep(thread_info_c &thread_info) {
         break;
       case KIND_LIB_RET:
         DoKindLibRet(thread_info, *(buf_lib_ret_t*)item);
-        if (thread_info.pending_state == thread_info_c::PEND_WANT_RET) {
-          thread_info.pending_state = thread_info_c::PEND_AFTER_RET;
+        if (thread_info.pending_state == ThreadInfo::PEND_WANT_RET) {
+          thread_info.pending_state = ThreadInfo::PEND_AFTER_RET;
           thread_info.last_kind = kind;
           continue;
         }
@@ -254,7 +254,7 @@ bool LogRunner::Run(RunPhase phase) {
   }
 
   if (phase == kPhaseNone) {
-    MapOfThreadInfo::iterator it_thread = info_threads_.end();
+    ThreadInfoMap::iterator it_thread = info_threads_.end();
     while (Step(it_thread)) ;
   }
 
@@ -306,7 +306,7 @@ bool LogRunner::RunMT() {
           }
           break;
         case kMsgThreadFinished: {
-          thread_info_c &thread_info = info_threads_[message.thread_id];
+          ThreadInfo &thread_info = info_threads_[message.thread_id];
           std::cout << message.thread_id << "] wait thread exit." << std::endl;
           thread_info.the_thread->join();
           thread_info.the_thread.reset();
@@ -319,7 +319,7 @@ bool LogRunner::RunMT() {
 
           if ( std::all_of(info_threads_.begin(),
             info_threads_.end(),
-            [](MapOfThreadInfo::value_type &v){
+            [](ThreadInfoMap::value_type &v){
               return v.second.the_thread == nullptr;
             }) )
             finished = true;
@@ -342,7 +342,7 @@ bool LogRunner::RunMT() {
   return true;
 }
 
-void LogRunner::ThreadRun(thread_info_c &thread_info) {
+void LogRunner::ThreadRun(ThreadInfo &thread_info) {
   while (! thread_info.finished && ! thread_info.the_runner->request_stop_) {
     if (thread_info.running) {
       if (! thread_info.the_runner->ThreadStep(thread_info) ) break;
@@ -365,7 +365,7 @@ void LogRunner::RequestToStop() {
     request_stop_ = true;
 }
 
-void LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb) {
+void LogRunner::DoKindBB(ThreadInfo &thread_info, mem_ref_t &buf_bb) {
   thread_info.within_bb = (uint) buf_bb.pc;
   uint len_last_instr = buf_bb.size & ((1 << LINK_SHIFT_FIELD) - 1);
   uint bb_link = buf_bb.size >> LINK_SHIFT_FIELD;
@@ -485,7 +485,7 @@ void LogRunner::DoKindBB(thread_info_c &thread_info, mem_ref_t &buf_bb) {
   thread_info.bb_count++;
 }
 
-void LogRunner::DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym) {
+void LogRunner::DoKindSymbol(ThreadInfo &thread_info, buf_symbol_t &buf_sym) {
   const char* copyupto = std::find(buf_sym.name, buf_sym.name + sizeof(buf_sym.name), 0);
   std::string name(buf_sym.name, copyupto - buf_sym.name);
   symbol_names_[buf_sym.func] = name;
@@ -498,7 +498,7 @@ void LogRunner::DoKindSymbol(thread_info_c &thread_info, buf_symbol_t &buf_sym) 
   }
 }
 
-void LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_libcall) {
+void LogRunner::DoKindLibCall(ThreadInfo &thread_info, buf_lib_call_t &buf_libcall) {
   const bool verbose = false;
 
   std::string name;
@@ -542,7 +542,7 @@ void LogRunner::DoKindLibCall(thread_info_c &thread_info, buf_lib_call_t &buf_li
   OnPush(thread_info.id, item, thread_info.apicall_now);
 }
 
-void LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libret) {
+void LogRunner::DoKindLibRet(ThreadInfo &thread_info, buf_lib_ret_t &buf_libret) {
   const bool verbose = false;
   std::string name;
   if (symbol_names_.find(buf_libret.func) != symbol_names_.end()) {
@@ -601,7 +601,7 @@ void LogRunner::DoKindLibRet(thread_info_c &thread_info, buf_lib_ret_t &buf_libr
   }
 }
 
-void LogRunner::DoKindArgs(thread_info_c &thread_info, buf_event_t &buf_args) {
+void LogRunner::DoKindArgs(ThreadInfo &thread_info, buf_event_t &buf_args) {
   df_apicall_c &libcall_now = thread_info.apicalls.back();
 
   if (thread_info.last_kind == KIND_LIB_CALL) {
@@ -615,7 +615,7 @@ void LogRunner::DoKindArgs(thread_info_c &thread_info, buf_event_t &buf_args) {
   }
 }
 
-void LogRunner::DoKindString(thread_info_c &thread_info, buf_string_t &buf_str) {
+void LogRunner::DoKindString(ThreadInfo &thread_info, buf_string_t &buf_str) {
   const char* copyupto = std::find(buf_str.value, buf_str.value + sizeof(buf_str.value), 0);
   std::string value(buf_str.value, copyupto - buf_str.value);
 
@@ -637,12 +637,12 @@ void LogRunner::DoKindString(thread_info_c &thread_info, buf_string_t &buf_str) 
 #endif
 }
 
-void LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync) {
+void LogRunner::DoKindSync(ThreadInfo &thread_info, buf_event_t &buf_sync) {
   uint sync_kind = buf_sync.params[2];
   uint wait = buf_sync.params[0];
   uint seq = buf_sync.params[1];
 
-  MapOfSyncSequence *p_wait_seqs = &wait_seqs_;
+  SyncSequenceMap *p_wait_seqs = &wait_seqs_;
   if (sync_kind == SYNC_CRITSEC) {
     p_wait_seqs = &critsec_seqs_;
   }
@@ -694,12 +694,12 @@ void LogRunner::DoKindSync(thread_info_c &thread_info, buf_event_t &buf_sync) {
   resume_cv_.notify_all();
 }
 
-void LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_write) {
+void LogRunner::DoMemRW(ThreadInfo &thread_info, mem_ref_t &mem_rw, bool is_write) {
   app_pc bb = thread_info.within_bb;
 
   if (! thread_info.within_bb) {
     // std::cout << "pending: " << thread_info.pending_state << " bb: 0x" << std::hex << thread_info.pending_bb.pc << std::endl;
-    if (thread_info.pending_state == thread_info_c::PEND_WANT_RET &&
+    if (thread_info.pending_state == ThreadInfo::PEND_WANT_RET &&
       thread_info.pending_bb.kind == KIND_BB)
       bb = thread_info.pending_bb.pc;
     else
@@ -727,7 +727,7 @@ void LogRunner::DoMemRW(thread_info_c &thread_info, mem_ref_t &mem_rw, bool is_w
 #endif
 }
 
-void LogRunner::DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop) {
+void LogRunner::DoMemLoop(ThreadInfo &thread_info, mem_ref_t &mem_loop) {
   if (thread_info.memaccesses.size() == 0)
     throw std::runtime_error("loop for who? missing mem access for loop");
 
@@ -746,7 +746,7 @@ void LogRunner::DoMemLoop(thread_info_c &thread_info, mem_ref_t &mem_loop) {
 #endif
 }
 
-void LogRunner::DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndproc) {
+void LogRunner::DoKindWndProc(ThreadInfo &thread_info, buf_event_t &buf_wndproc) {
   bool verbose = false; // show_options_ & LR_SHOW_WNDPROC;
   if (!verbose) return;
 
@@ -759,7 +759,7 @@ void LogRunner::DoKindWndProc(thread_info_c &thread_info, buf_event_t &buf_wndpr
     << ")" << std::endl;
 }
 
-void LogRunner::ThreadWaitCritSec(thread_info_c &thread_info) {
+void LogRunner::ThreadWaitCritSec(ThreadInfo &thread_info) {
   if (thread_info.critsec_wait) {
     SyncSequence &ss = critsec_seqs_[thread_info.critsec_wait];
     std::unique_lock<std::mutex> lk(resume_mx_);
@@ -780,7 +780,7 @@ void LogRunner::ThreadWaitCritSec(thread_info_c &thread_info) {
   }
 }
 
-void LogRunner::ThreadWaitEvent(thread_info_c &thread_info) {
+void LogRunner::ThreadWaitEvent(ThreadInfo &thread_info) {
   if (thread_info.hevent_wait) {
     SyncSequence &ss = wait_seqs_[thread_info.hevent_wait];
     std::unique_lock<std::mutex> lk(resume_mx_);
@@ -801,7 +801,7 @@ void LogRunner::ThreadWaitEvent(thread_info_c &thread_info) {
   }
 }
 
-void LogRunner::ThreadWaitMutex(thread_info_c &thread_info) {
+void LogRunner::ThreadWaitMutex(ThreadInfo &thread_info) {
   if (thread_info.hmutex_wait) {
     SyncSequence &ss = wait_seqs_[thread_info.hmutex_wait];
     std::unique_lock<std::mutex> lk(resume_mx_);
@@ -822,7 +822,7 @@ void LogRunner::ThreadWaitMutex(thread_info_c &thread_info) {
   }
 }
 
-void LogRunner::ThreadWaitRunning(thread_info_c &thread_info) {
+void LogRunner::ThreadWaitRunning(ThreadInfo &thread_info) {
   if (thread_info.running && ! thread_info.finished) {
     std::unique_lock<std::mutex> lk(resume_mx_);
 
@@ -847,7 +847,7 @@ void LogRunner::PostMessage(uint thread_id, RunnerMessageType msg_type, std::str
   message_cv_.notify_all();
 }
 
-void LogRunner::ApiCallRet(thread_info_c &thread_info) {
+void LogRunner::ApiCallRet(ThreadInfo &thread_info) {
   df_apicall_c apicall_ret = *thread_info.apicall_now;
   thread_info.apicalls.pop_back();
   thread_info.apicall_now = nullptr;
@@ -876,7 +876,7 @@ void LogRunner::ApiCallRet(thread_info_c &thread_info) {
   OnApiCall(thread_info.id, apicall_ret);
 }
 
-void LogRunner::DoEndBB(thread_info_c &thread_info) {
+void LogRunner::DoEndBB(ThreadInfo &thread_info) {
   if (thread_info.within_bb != thread_info.last_bb.pc) {
     throw std::runtime_error("Mismatch last_bb with within_bb !");
   }
@@ -902,7 +902,7 @@ void LogRunner::OnCreateThread(df_apicall_c &apicall, uint64 ts) {
     std::ostringstream oss;
     oss << filename_ << "." << std::dec << new_thread_id;
 
-    thread_info_c &thread_info = info_threads_[new_thread_id];
+    ThreadInfo &thread_info = info_threads_[new_thread_id];
 
     thread_info.now_ts = ts;
     thread_info.the_runner = this;
@@ -957,7 +957,7 @@ void LogRunner::Summary() {
   // Summary
   for (auto &it : info_threads_) {
     uint thread_id = it.first;
-    thread_info_c &thread_info = it.second;
+    ThreadInfo &thread_info = it.second;
 
     ThreadStats &thread_stats = stats_threads_[thread_info.id];
     thread_stats.Apply(thread_info);
@@ -1043,7 +1043,7 @@ void LogRunner::SaveState(std::ostream &out) {
   write_u32(out, info_threads_.size());
 
   for (auto &it : info_threads_) {
-    thread_info_c &thread_info = it.second;
+    ThreadInfo &thread_info = it.second;
 
     write_u32(out, it.first);
 
@@ -1101,7 +1101,7 @@ void LogRunner::RestoreState(std::istream &in) {
   for(int i = read_u32(in); i; i--) {
     uint32_t first = read_u32(in);
 
-    thread_info_c &thread_info = info_threads_[first];
+    ThreadInfo &thread_info = info_threads_[first];
 
     if (first == 0) {
       thread_info.logparser.open(filename_.c_str());
@@ -1148,7 +1148,7 @@ void LogRunner::Dump(int indent) {
   }
 }
 
-void thread_info_c::SaveState(std::ostream &out) {
+void ThreadInfo::SaveState(std::ostream &out) {
   out << "info";
 
   write_u32(out, id);
@@ -1217,7 +1217,7 @@ void thread_info_c::SaveState(std::ostream &out) {
   }
 }
 
-void thread_info_c::RestoreState(std::istream &in) {
+void ThreadInfo::RestoreState(std::istream &in) {
   if (!read_match(in, "info"))
     throw std::runtime_error("mismatch marker 'info'");
 
@@ -1278,7 +1278,7 @@ void thread_info_c::RestoreState(std::istream &in) {
   }
 }
 
-void thread_info_c::Dump(int indent) {
+void ThreadInfo::Dump(int indent) {
   std::string _tab = std::string(indent, ' ');
 
   std::cout << _tab << "thread id: " << std::dec << id << std::endl;
