@@ -11,7 +11,7 @@ static droption_t<bool> enable_memtrace(
     "Enable memory access trace",
     "Record all memory read/write access, looping counter and stops");
 
-static droption_t<int> libcall_mode(
+static droption_t<unsigned int> libcall_mode(
     DROPTION_SCOPE_CLIENT, "libcall", 0,
     "Enable wrap libcall with mode",
     "Mode could be 0 = disable, 1 = whole libcall, 2 = only defined win32 api call");
@@ -42,5 +42,6 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
     dr_enable_console_printing();
 
-    dr_printf("Option: memtrace: %d\n", enable_memtrace.get_value());
+    dr_printf("Option memtrace = %s\n", opts.enable_memtrace ? "true" : "false");
+    dr_printf("Option libcall  = %s\n", opts.libcall_mode == 2 ? "winapi only" : opts.libcall_mode == 1 ? "enable" : "disable");
 }

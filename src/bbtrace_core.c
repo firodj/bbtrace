@@ -76,14 +76,14 @@ nop_delay(uint rep)
 void
 lib_entry(void *wrapcxt, INOUT void **user_data)
 {
-    void *drcontext;
-    app_pc func, ret_addr;
+    void         *drcontext;
+    app_pc       func, ret_addr;
     per_thread_t *thd_data;
 
     drcontext = drwrap_get_drcontext(wrapcxt);
-    func = drwrap_get_func(wrapcxt);
+    func      = drwrap_get_func(wrapcxt);
 #if 1
-    ret_addr = drwrap_get_retaddr(wrapcxt);
+    ret_addr  = drwrap_get_retaddr(wrapcxt);
 #else
     DR_TRY_EXCEPT(drcontext, {
         ret_addr = drwrap_get_retaddr(wrapcxt);
@@ -102,25 +102,28 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     }
 
     wrap_lib_user_t data = {0};
-    data.verbose = true;
+    data.verbose  = true;
     data.sym_info = *sym_info;
     if (!data.verbose) return;
 
     buf_string_t buf_str = {0};
     buf_lib_call_t buf_item = {0};
-    buf_item.kind = KIND_LIB_CALL;
-    buf_item.func = func;
+    buf_item.kind     = KIND_LIB_CALL;
+    buf_item.func     = func;
     buf_item.ret_addr = ret_addr;
     DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_lib_call_t));
     DR_ASSERT(6 * sizeof(mem_ref_t) == sizeof(buf_string_t));
 
-    wrap_lib_user_t *p_data;
+    // DEBUG: dr_printf("lib_entry: %s\n", sym_info->sym.name);
+
+    wrap_lib_user_t *p_data = 0;
     if (sym_info->winapi_info) {
-        p_data = dr_global_alloc(sizeof(wrap_lib_user_t));
-        *p_data = data;
-        *user_data = p_data;
-    } else {
-        p_data = &data;
+        // p_data = dr_global_alloc(sizeof(wrap_lib_user_t));
+        // DEBUG: dr_printf("allocate %s at: %X\n", sym_info->sym.name, (uint)p_data);
+        if (p_data) {
+            *p_data = data;
+            *user_data = p_data;
+        }
     }
 
     // WINAPI: save args and strings
@@ -128,13 +131,13 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     if (sym_info->winapi_info) {
         nargs = sym_info->winapi_info->nargs;
         for (uint a = 0; a < nargs; a++) {
-            p_data->args[a] = drwrap_get_arg(wrapcxt, a);
+            data.args[a] = drwrap_get_arg(wrapcxt, a);
             // Capture only arg-0
             if (a == 0) {
-                buf_item.arg = (uint)p_data->args[a];
+                buf_item.arg = (uint)data.args[a];
                 if (sym_info->winapi_info->targs[a] == A_LPSTR) {
                     buf_str.kind = KIND_STRING;
-                    strncpy(buf_str.value, (char*)p_data->args[a], sizeof(buf_str.value));
+                    strncpy(buf_str.value, (char*)data.args[a], sizeof(buf_str.value));
                 }
             }
         }
@@ -153,7 +156,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
         have_hooks = sym_info->winapi_info->pre_hook || sym_info->winapi_info->post_hook;
 
         if (sym_info->winapi_info->pre_hook) {
-            sym_info->winapi_info->pre_hook(wrapcxt, (void*)p_data);
+            sym_info->winapi_info->pre_hook(wrapcxt, &data);
         }
     }
 
@@ -172,7 +175,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
                 buf_event_t buf_args = {0};
                 buf_args.kind = KIND_ARGS;
                 for (uint b = 0; b < 3 && a < nargs; b++, a++) {
-                    buf_args.params[b] = (uint)p_data->args[a];
+                    buf_args.params[b] = (uint)data.args[a];
                 }
 
                 if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end)
@@ -187,16 +190,16 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 void
 lib_exit(void *wrapcxt, INOUT void *user_data)
 {
-    wrap_lib_user_t *p_data = user_data;
-    app_pc func, ret_addr;
-    per_thread_t *thd_data;
-    void *drcontext;
-    sym_info_item_t *sym_info = 0;
+    wrap_lib_user_t  *p_data = user_data;
+    app_pc           func, ret_addr;
+    per_thread_t     *thd_data;
+    void             *drcontext;
+    sym_info_item_t  *sym_info = 0;
 
     drcontext = drwrap_get_drcontext(wrapcxt);
-    func = drwrap_get_func(wrapcxt);
+    func      = drwrap_get_func(wrapcxt);
 #if 1
-    ret_addr = drwrap_get_retaddr(wrapcxt);
+    ret_addr  = drwrap_get_retaddr(wrapcxt);
 #else
     DR_TRY_EXCEPT(drcontext, {
         ret_addr = drwrap_get_retaddr(wrapcxt);
@@ -206,9 +209,9 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
 #endif
 
     buf_lib_ret_t buf_item = {0};
-    buf_item.kind = KIND_LIB_RET;
-    buf_item.func = func;
-    buf_item.ret_addr = ret_addr;
+    buf_item.kind          = KIND_LIB_RET;
+    buf_item.func          = func;
+    buf_item.ret_addr      = ret_addr;
     DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_lib_ret_t));
 
     if (p_data) {
@@ -233,7 +236,7 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
     // WINAPI: post hook
     if (sym_info && sym_info->winapi_info) {
         if (sym_info->winapi_info->post_hook) {
-            sym_info->winapi_info->post_hook(wrapcxt, (void*)p_data);
+            sym_info->winapi_info->post_hook(wrapcxt, p_data);
         }
     }
 
@@ -260,12 +263,15 @@ is_wrapping_symbol(sym_info_item_t *sym_info) {
         } else if (_stricmp(sym_info->sym.name, "CreateThread") == 0) {
             g_func_CreateThread = sym_info->sym.addr;
             dr_printf("Fun CreateThread: %X\n", g_func_CreateThread);
+            return true;
         }
         break;
     case NTDLL_DLL:
         if (_stricmp(sym_info->sym.name, "RtlQueryPerformanceCounter") == 0) {
             return false;
         }
+        // FAIL: RtlActivateActivationContextUnsafeFast
+        // FAIL: RtlDeactivateActivationContextUnsafeFast
         break;
     }
     return true;

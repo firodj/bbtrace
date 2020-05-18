@@ -316,9 +316,9 @@ static const winapi_info_t winapi_infos[] = {
     {D3D9_DLL, "IDirect3DStateBlock9_Capture", 1, {A_LPVOID}, A_HRESULT},
     {D3D9_DLL, "IDirect3DStateBlock9_Apply", 1, {A_LPVOID}, A_HRESULT},
 
- // {WINMM_DLL, "timeSetEvent", 5, {A_DWORD, A_DWORD, A_LPVOID, A_DWORD, A_DWORD}, A_HRESULT},
+ // DISABLED: {WINMM_DLL, "timeSetEvent", 5, {A_DWORD, A_DWORD, A_LPVOID, A_DWORD, A_DWORD}, A_HRESULT},
 
- // {D3D9_DLL, "IDirect3DTexture9_", 1, {A_LPVOID}, A_HRESULT, NULL, NULL},
+ // DISABLED: {D3D9_DLL, "IDirect3DTexture9_", 1, {A_LPVOID}, A_HRESULT, NULL, NULL},
 
     {NTDLL_DLL, "RtlAllocateHeap", 3, {A_HANDLE, A_DWORD, A_DWORD}, A_LPVOID},
     {NTDLL_DLL, "RtlEnterCriticalSection", 1, {A_LPVOID}, A_VOID, NULL, after_EnterCriticalSection},
