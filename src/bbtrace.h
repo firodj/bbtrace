@@ -5,7 +5,12 @@
 extern "C" {
 #endif
 
-void bbtrace_init(client_id_t id, bool is_enable_memtrace);
+typedef struct _bbtrace_options_tag {
+    bool enable_memtrace;
+    int  libcall_mode;
+} bbtrace_options_t;
+
+void bbtrace_init(client_id_t id, bbtrace_options_t opts);
 void bbtrace_exit(void);
 file_t get_info_file();
 

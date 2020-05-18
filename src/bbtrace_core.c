@@ -19,11 +19,8 @@
 
 #pragma intrinsic(__rdtsc)
 
-static bool enable_memtrace = false;
 #define WITH_BBTRACE 1
 #define WITH_APPCALL 0
-#define WITH_LIBCALL 1
-#define ONLY_WINAPI 1
 
 static file_t info_file;
 static drvector_t vec_dynamic_codes;
@@ -44,7 +41,8 @@ static bool is_dynamic_code(app_pc pc);
 static void dump_data(void *drcontext);
 static void dump_thread_mcontext(void *drcontext);
 
-static app_pc g_funCreateThread = 0;
+static app_pc g_func_CreateThread = 0;
+static bbtrace_options_t g_opts;
 
 /* thread private log file and counter */
 typedef struct {
@@ -97,7 +95,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     sym_info_item_t *sym_info = syminfo_get(func);
     if (!sym_info) return;
 
-    if (func != g_funCreateThread) {
+    if (func != g_func_CreateThread) {
         //if (!sym_info->winapi_info) {
         if (!is_from_exe(ret_addr, false)) return;
         //}
@@ -247,12 +245,8 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
 /* ------------------------------------------------------------------------- */
 static bool
 is_wrapping_symbol(sym_info_item_t *sym_info) {
-#if !WITH_LIBCALL
-    return false;
-#endif
-#if ONLY_WINAPI
-    if (!sym_info->winapi_info) return false;
-#endif
+    if (g_opts.libcall_mode == 0) return false;
+    if (g_opts.libcall_mode == 2 && !sym_info->winapi_info) return false;
 
     switch (sym_info->shared_dll) {
     case D3D9_DLL:
@@ -264,8 +258,8 @@ is_wrapping_symbol(sym_info_item_t *sym_info) {
         if (_stricmp(sym_info->sym.name, "QueryPerformanceCounter") == 0) {
             return false;
         } else if (_stricmp(sym_info->sym.name, "CreateThread") == 0) {
-            g_funCreateThread = sym_info->sym.addr;
-            dr_printf("Fun CreateThread: %X\n", g_funCreateThread);
+            g_func_CreateThread = sym_info->sym.addr;
+            dr_printf("Fun CreateThread: %X\n", g_func_CreateThread);
         }
         break;
     case NTDLL_DLL:
@@ -468,7 +462,7 @@ event_exception(void *drcontext, dr_exception_t *excpt)
     *(buf_exception_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_exception_t);
 
-    dr_fprintf(info_file, "tid:%d,exception:0x%X,exception_addr:0x%X\n", 
+    dr_fprintf(info_file, "tid:%d,exception:0x%X,exception_addr:0x%X\n",
         thread_id, buf_item.code, buf_item.pc);
 
     return true;
@@ -1149,7 +1143,7 @@ event_bb_insert(void *drcontext, void *tag, instrlist_t *bb, instr_t *instr,
         instrument_bb(drcontext, bb, instr, ud);
 #endif
 
-        if (enable_memtrace) {
+        if (g_opts.enable_memtrace) {
             if (ud->loop_stop_pc == pc) {
                 instrument_stringop_loop_stop(drcontext, bb, instr);
                 ud->loop_stop_pc = (app_pc)0;
@@ -1301,7 +1295,7 @@ char* set_dump_path(client_id_t id, dr_time_t* start_time)
 }
 
 void
-bbtrace_init(client_id_t id, bool is_enable_memtrace)
+bbtrace_init(client_id_t id, bbtrace_options_t opts)
 {
     char path[MAXIMUM_PATH];
     dr_time_t start_time;
@@ -1310,7 +1304,7 @@ bbtrace_init(client_id_t id, bool is_enable_memtrace)
 
     dr_get_time(&start_time);
 
-    enable_memtrace = is_enable_memtrace;
+    g_opts = opts;
 
     set_dump_path(id, &start_time);
     dr_snprintf(path, sizeof(path), "%s.txt", dump_path);
