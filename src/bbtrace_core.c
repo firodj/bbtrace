@@ -18,6 +18,7 @@
 #include "bbtrace_core.h"
 
 #pragma intrinsic(__rdtsc)
+#pragma intrinsic (_InterlockedExchangeAdd)
 
 #define WITH_BBTRACE 1
 #define WITH_APPCALL 0
@@ -43,6 +44,9 @@ static void dump_thread_mcontext(void *drcontext);
 
 static app_pc g_func_CreateThread = 0;
 static bbtrace_options_t g_opts;
+typedef volatile unsigned char atomic8_t;
+atomic8_t g_memcounter = 0;
+static wrap_lib_user_t g_wrap_userdatas[256];
 
 /* thread private log file and counter */
 typedef struct {
@@ -116,14 +120,19 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 
     // DEBUG: dr_printf("lib_entry: %s\n", sym_info->sym.name);
 
-    wrap_lib_user_t *p_data = 0;
+    unsigned char memcounter = _InterlockedExchangeAdd8(&g_memcounter, 1);
+    wrap_lib_user_t *p_data = &g_wrap_userdatas[memcounter];
+
     if (sym_info->winapi_info) {
-        // p_data = dr_global_alloc(sizeof(wrap_lib_user_t));
+        *user_data = p_data;
+        // dr_printf("sizeof(wrap_lib_user_t) = %d\n", sizeof(wrap_lib_user_t));
+        //dr_printf("g_memcounter = %d\n", g_memcounter);
+        //p_data = dr_global_alloc(sizeof(wrap_lib_user_t));
         // DEBUG: dr_printf("allocate %s at: %X\n", sym_info->sym.name, (uint)p_data);
-        if (p_data) {
-            *p_data = data;
-            *user_data = p_data;
-        }
+        //if (p_data) {
+        //    *p_data = data;
+        //    *user_data = p_data;
+        //}
     }
 
     // WINAPI: save args and strings
@@ -131,13 +140,13 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     if (sym_info->winapi_info) {
         nargs = sym_info->winapi_info->nargs;
         for (uint a = 0; a < nargs; a++) {
-            data.args[a] = drwrap_get_arg(wrapcxt, a);
+            p_data->args[a] = drwrap_get_arg(wrapcxt, a);
             // Capture only arg-0
             if (a == 0) {
-                buf_item.arg = (uint)data.args[a];
+                buf_item.arg = (uint)p_data->args[a];
                 if (sym_info->winapi_info->targs[a] == A_LPSTR) {
                     buf_str.kind = KIND_STRING;
-                    strncpy(buf_str.value, (char*)data.args[a], sizeof(buf_str.value));
+                    strncpy(buf_str.value, (char*)p_data->args[a], sizeof(buf_str.value));
                 }
             }
         }
@@ -175,7 +184,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
                 buf_event_t buf_args = {0};
                 buf_args.kind = KIND_ARGS;
                 for (uint b = 0; b < 3 && a < nargs; b++, a++) {
-                    buf_args.params[b] = (uint)data.args[a];
+                    buf_args.params[b] = (uint)p_data->args[a];
                 }
 
                 if ((ptr_int_t)(thd_data->buf_ptr + sizeof(buf_event_t)) >= -thd_data->buf_end)
@@ -238,10 +247,6 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
         if (sym_info->winapi_info->post_hook) {
             sym_info->winapi_info->post_hook(wrapcxt, p_data);
         }
-    }
-
-    if (p_data) {
-        dr_global_free(p_data, sizeof(wrap_lib_user_t));
     }
 }
 
@@ -1319,8 +1324,8 @@ bbtrace_init(client_id_t id, bbtrace_options_t opts)
 
     dr_fprintf(info_file, "pid:%d,name:%s\n", pid, app_name);
 
-    drmgr_init();
     drutil_init();
+    drmgr_init();
     drwrap_init();
     drwrap_set_global_flags(DRWRAP_NO_FRILLS | DRWRAP_FAST_CLEANCALLS);
 
@@ -1329,6 +1334,7 @@ bbtrace_init(client_id_t id, bbtrace_options_t opts)
 
     tls_index = drmgr_register_tls_field();
     DR_ASSERT(tls_index != -1);
+    // DR_ASSERT(sizeof(wrap_lib_user_t) % 16 == 0);
 
     codecache_init(clean_call, DR_REG_XCX);
     drvector_init(&vec_dynamic_codes, 10, false, free_range);
@@ -1368,8 +1374,8 @@ bbtrace_exit(void)
     winapi_exit();
 
     drwrap_exit();
-    drutil_exit();
     drmgr_exit();
+    drutil_exit();
 
     if (info_file != INVALID_FILE) {
         dr_close_file(info_file);

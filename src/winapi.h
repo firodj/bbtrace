@@ -58,7 +58,7 @@ typedef struct _sym_info_item_t {
   winapi_info_t *winapi_info;
 } sym_info_item_t;
 
-typedef struct _wrap_lib_user_t {
+typedef __declspec(align(16)) struct _wrap_lib_user_t {
     sym_info_item_t sym_info;
     bool verbose;
     void *args[MAX_LIB_ARGS];
