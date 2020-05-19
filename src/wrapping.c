@@ -75,15 +75,12 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     wrap_lib_user_t *p_data = &g_wrap_userdatas[memcounter];
 
     if (sym_info->winapi_info) {
+        *p_data = data;
         *user_data = p_data;
         // dr_printf("sizeof(wrap_lib_user_t) = %d\n", sizeof(wrap_lib_user_t));
         //dr_printf("g_memcounter = %d\n", g_memcounter);
         //p_data = dr_global_alloc(sizeof(wrap_lib_user_t));
         // DEBUG: dr_printf("allocate %s at: %X\n", sym_info->sym.name, (uint)p_data);
-        //if (p_data) {
-        //    *p_data = data;
-        //    *user_data = p_data;
-        //}
     }
 
     // WINAPI: save args and strings
@@ -175,8 +172,15 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
     DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_lib_ret_t));
 
     if (p_data) {
+        // DEBUG:
         sym_info = &p_data->sym_info;
-    } else if (!is_from_exe(ret_addr, false)) return;
+        // dr_printf("lib_exit: %X\t%d %s\n", func, sym_info->sym.ordinal, sym_info->sym.name);
+    } else {
+        // dr_printf("lib_exit: %X\n", func);
+        // sym_info_item_t *sym_info = syminfo_get(func);
+        // if (sym_info) dr_printf("\t%d %s\n", sym_info->sym.ordinal, sym_info->sym.name);
+        if (!is_from_exe(ret_addr, false)) return;
+    }
 
     // WINAPI: get retval
     if (sym_info && sym_info->winapi_info) {
@@ -194,7 +198,7 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
     *(buf_lib_ret_t*)thd_data->buf_ptr = buf_item;
     thd_data->buf_ptr += sizeof(buf_lib_ret_t);
 #else
-    // thread_id_t thread_id = dr_get_thread_id(drcontext);
+    //thread_id_t thread_id = dr_get_thread_id(drcontext);
 #endif
 
     // WINAPI: post hook
