@@ -11,7 +11,9 @@ set (CMAKE_CXX_STANDARD 11)
 if (MSVC)
   add_library(bbtrace_core STATIC
       src/bbtrace_core.c src/codecache.c
-      src/synchro.c src/winapi.c)
+      src/synchro.c src/winapi.c
+      src/wrapping.c
+      )
   target_compile_definitions(bbtrace_core PUBLIC WINDOWS X86_32)
   target_include_directories(bbtrace_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src $ENV{DYNAMORIO_HOME}/include)
   if (CMAKE_BUILD_TYPE STREQUAL Debug)
