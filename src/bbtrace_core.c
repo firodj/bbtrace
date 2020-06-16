@@ -76,14 +76,14 @@ nop_delay(uint rep)
 void
 lib_entry(void *wrapcxt, INOUT void **user_data)
 {
-    void *drcontext;
-    app_pc func, ret_addr;
+    void         *drcontext;
+    app_pc       func, ret_addr;
     per_thread_t *thd_data;
 
     drcontext = drwrap_get_drcontext(wrapcxt);
-    func = drwrap_get_func(wrapcxt);
+    func      = drwrap_get_func(wrapcxt);
 #if 1
-    ret_addr = drwrap_get_retaddr(wrapcxt);
+    ret_addr  = drwrap_get_retaddr(wrapcxt);
 #else
     DR_TRY_EXCEPT(drcontext, {
         ret_addr = drwrap_get_retaddr(wrapcxt);
@@ -102,14 +102,14 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     }
 
     wrap_lib_user_t data = {0};
-    data.verbose = true;
+    data.verbose  = true;
     data.sym_info = *sym_info;
     if (!data.verbose) return;
 
     buf_string_t buf_str = {0};
     buf_lib_call_t buf_item = {0};
-    buf_item.kind = KIND_LIB_CALL;
-    buf_item.func = func;
+    buf_item.kind     = KIND_LIB_CALL;
+    buf_item.func     = func;
     buf_item.ret_addr = ret_addr;
     DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_lib_call_t));
     DR_ASSERT(6 * sizeof(mem_ref_t) == sizeof(buf_string_t));
@@ -187,14 +187,14 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 void
 lib_exit(void *wrapcxt, INOUT void *user_data)
 {
-    wrap_lib_user_t *p_data = user_data;
-    app_pc func, ret_addr;
-    per_thread_t *thd_data;
-    void *drcontext;
-    sym_info_item_t *sym_info = 0;
+    wrap_lib_user_t  *p_data = user_data;
+    app_pc           func, ret_addr;
+    per_thread_t     *thd_data;
+    void             *drcontext;
+    sym_info_item_t  *sym_info = 0;
 
     drcontext = drwrap_get_drcontext(wrapcxt);
-    func = drwrap_get_func(wrapcxt);
+    func      = drwrap_get_func(wrapcxt);
 #if 1
     ret_addr = drwrap_get_retaddr(wrapcxt);
 #else
@@ -206,9 +206,9 @@ lib_exit(void *wrapcxt, INOUT void *user_data)
 #endif
 
     buf_lib_ret_t buf_item = {0};
-    buf_item.kind = KIND_LIB_RET;
-    buf_item.func = func;
-    buf_item.ret_addr = ret_addr;
+    buf_item.kind          = KIND_LIB_RET;
+    buf_item.func          = func;
+    buf_item.ret_addr      = ret_addr;
     DR_ASSERT(sizeof(mem_ref_t) == sizeof(buf_lib_ret_t));
 
     if (p_data) {
