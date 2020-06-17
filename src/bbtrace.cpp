@@ -42,5 +42,6 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
     dr_enable_console_printing();
 
-    dr_printf("Option: memtrace: %d\n", enable_memtrace.get_value());
+    dr_printf("Option memtrace: %s\n", opts.enable_memtrace ? "true" : "false");
+    dr_printf("Option libcall: %s\n", opts.libcall_mode == 1 ? "1 (all)" : opts.libcall_mode == 2 ? "2 (winapi)" : "0 (disable)");
 }
